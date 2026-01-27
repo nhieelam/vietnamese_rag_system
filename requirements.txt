@@ -1,0 +1,19 @@
+# --- Frontend & UI ---
+streamlit
+
+# --- RAG Framework ---
+langchain
+langchain-community
+langchain-openai
+
+# --- Vector Database ---
+faiss-cpu
+tiktoken
+
+# --- Document Processing (PDF & OCR) ---
+pdfplumber
+pytesseract
+pillow
+
+# --- Utilities ---
+python-dotenv
