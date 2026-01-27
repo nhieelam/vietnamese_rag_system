@@ -17,3 +17,11 @@ pillow
 
 # --- Utilities ---
 python-dotenv
+
+langchain-text-splitters
+create_db
+
+
+sentence-transformers
+chromadb
+langchain-huggingface
