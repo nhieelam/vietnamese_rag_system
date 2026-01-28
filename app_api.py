@@ -1,11 +1,3 @@
-"""
-FastAPI application for Vietnamese RAG System.
-
-This API provides endpoints for:
-1. Uploading documents (PDF/images) and asking questions
-2. Asking questions about previously uploaded documents
-3. Complete RAG workflow with status codes
-"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

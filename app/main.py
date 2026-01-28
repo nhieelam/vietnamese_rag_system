@@ -1,4 +1,3 @@
-
 from app.services import initialize_session_state
 from app.ui import (
     apply_custom_styles,
@@ -8,17 +7,13 @@ from app.ui import (
 )
 
 
-
 def main():
-
-    apply_custom_styles()
-    
     initialize_session_state()
     
+    apply_custom_styles()
+    
     render_sidebar()
-    
     render_chat_messages()
-    
     render_chat_input()
 
 
