@@ -25,3 +25,9 @@ create_db
 sentence-transformers
 chromadb
 langchain-huggingface
+
+
+fastapi 
+uvicorn 
+
+langchain-google-genai
