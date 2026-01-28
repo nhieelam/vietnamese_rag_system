@@ -21,4 +21,4 @@ Step 3: Run Streamlit (Frontend UI)
 
 Mở terminal khác và chạy Streamlit:
 
-streamlit run app/main.py
+python -m streamlit run app/main.py
