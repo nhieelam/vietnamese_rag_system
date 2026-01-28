@@ -3,8 +3,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from app.services.ocr_service import extract_text_from_image
-from app.config.app_config import AppConfig
+# File loader import removed - not needed in ingest_service
+# from app.services.file_loader import extract_text_from_file
+from app.config import AppConfig
 
 DB_DIRECTORY = AppConfig.DB_DIRECTORY
 
@@ -35,4 +36,5 @@ def ingest_file(raw_text):
     vector_db.add_documents(docs)
     
     print(f"Success! Added {len(docs)} chunks to the database.")
+    
 
