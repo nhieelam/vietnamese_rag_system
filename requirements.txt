@@ -5,8 +5,13 @@ streamlit
 langchain
 langchain-community
 langchain-openai
+langchain-text-splitters
+langchain-huggingface
+langchain-google-genai
 
 # --- Vector Database ---
+chromadb
+sentence-transformers
 faiss-cpu
 tiktoken
 
@@ -15,19 +20,9 @@ pdfplumber
 pytesseract
 pillow
 
+# --- Web Framework & Server ---
+fastapi 
+uvicorn[standard]
+
 # --- Utilities ---
 python-dotenv
-
-langchain-text-splitters
-create_db
-
-
-sentence-transformers
-chromadb
-langchain-huggingface
-
-
-fastapi 
-uvicorn 
-
-langchain-google-genai
