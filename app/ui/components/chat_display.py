@@ -1,13 +1,13 @@
 
 import streamlit as st
-from app.services.session_manager import get_messages, get_documents
+from app.services.session_service import SessionService
 
 
 def render_chat_header():
     st.title("💬 Vietnamese RAG Assistant")
     st.markdown("Ask questions about your uploaded documents and get comprehensive answers")
     
-    documents = get_documents()
+    documents = SessionService.get_documents()
     if documents:
         st.success(f"Knowledge base active with {len(documents)} document(s)")
     else:
@@ -20,7 +20,7 @@ def render_chat_messages():
     chat_container = st.container()
     
     with chat_container:
-        messages = get_messages()
+        messages = SessionService.get_messages()
         
         if not messages:
             _render_welcome_message()

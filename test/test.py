@@ -7,7 +7,7 @@ parent_dir = current_dir.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from app.services.file_loader import extract_text_from_file
+from app.services.file_service import extract_text_from_file
 
 
 class MockFile:
