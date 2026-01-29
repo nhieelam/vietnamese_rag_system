@@ -17,6 +17,9 @@ class SessionService:
         if not cls._has_context():
             return
         
+        if "vector_store" not in st.session_state:
+            st.session_state.vector_store = None
+
         if "documents" not in st.session_state:
             st.session_state.documents = []
 
@@ -31,6 +34,23 @@ class SessionService:
 
         if "max_tokens" not in st.session_state:
             st.session_state.max_tokens = 800
+
+    # ---------- Vector Store ----------
+    @classmethod
+    def set_vector_store(cls, vector_store):
+        if cls._has_context():
+            st.session_state.vector_store = vector_store
+
+    @classmethod
+    def get_vector_store(cls):
+        if not cls._has_context():
+            return None
+        return st.session_state.get("vector_store")
+
+    @classmethod
+    def clear_vector_store(cls):
+        if cls._has_context():
+            st.session_state.vector_store = None
 
     # ---------- Documents ----------
     @classmethod

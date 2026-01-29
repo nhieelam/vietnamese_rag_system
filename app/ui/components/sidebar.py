@@ -1,8 +1,13 @@
+from unittest import result
 import streamlit as st
 from datetime import datetime
-from app.services.file_service import FileService
-from app.services.session_service import SessionService
+from app.services import EmbeddingService
+from app.services import FileService
+from app.services import SessionService
 from app.config import AppConfig
+from app.services import VectorStoreService
+from app.services import TextSplitterService
+
 def render_sidebar():
     with st.sidebar:
         _render_upload_section()
@@ -42,6 +47,11 @@ def _process_and_add_document(uploaded_file):
                     "uploaded_at": datetime.now().strftime(AppConfig.UPLOAD_TIMESTAMP_FORMAT)
                 }
                 SessionService.add_document(doc_data)
+                chunks = TextSplitterService.split(doc_data["text"]["text"])
+                VectorStoreService.build_from_chunks(
+                    chunks=chunks,
+                    embedding=EmbeddingService.get_huggingface_embedding(),
+                )
                 st.success(f"✅ Added: {uploaded_file.name}")
                 st.rerun()
         except Exception as e:
