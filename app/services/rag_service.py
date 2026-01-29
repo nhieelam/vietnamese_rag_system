@@ -38,9 +38,18 @@ class RAGService:
         return PromptTemplate.from_template(
             """
             Bạn là một trợ lý AI hữu ích.
+
             Hãy sử dụng thông tin trong ngữ cảnh để trả lời câu hỏi.
-            Nếu không tìm thấy câu trả lời trong tài liệu, hãy nói:
-            "Tôi không tìm thấy thông tin này trong tài liệu".
+            Bạn có thể suy luận hợp lý từ thông tin có trong tài liệu, 
+            nhưng không được bịa ra thông tin mới.
+
+            Nếu câu trả lời không được nêu trực tiếp nhưng có thể suy ra
+            một cách hợp lý từ tài liệu, hãy trả lời và nói rõ là
+            "Dựa trên thông tin trong tài liệu, có thể suy ra rằng ...".
+
+            Nếu hoàn toàn không tìm thấy thông tin liên quan trong tài liệu,
+            hãy nói:
+            "Tôi không tìm thấy thông tin này trong tài liệu."".
 
             Ngữ cảnh:
             {context}
@@ -69,7 +78,7 @@ class RAGService:
 
         try:
             retriever = vector_store.as_retriever(
-                search_kwargs={"k": 3}
+                search_kwargs={"k": 10}
             )
 
             docs = retriever.invoke(query)
