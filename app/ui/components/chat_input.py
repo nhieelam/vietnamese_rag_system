@@ -1,7 +1,8 @@
 
 import streamlit as st
 from datetime import datetime
-from app.services.session_service import SessionService
+from app.services import RAGService
+from app.services import SessionService
 from app.config import AppConfig
 
 def render_chat_input():
@@ -35,13 +36,13 @@ def _process_user_message(user_input: str):
     timestamp = datetime.now().strftime(AppConfig.TIMESTAMP_FORMAT)
     SessionService.add_message("user", user_input, timestamp)
     
-    # with st.spinner("🤔 Thinking..."):
-    #     try:
-    #         answer = generate_answer(user_input, get_documents())
+    with st.spinner("🤔 Thinking..."):
+        try:
+            answer = RAGService.get_answer(user_input)
             
-    #         add_message("assistant", answer, timestamp)
+            SessionService.add_message("assistant", answer, timestamp)
             
-    #         st.rerun()
+            st.rerun()
             
-    #     except Exception as e:
-    #         st.error(f"Error generating response: {str(e)}")
+        except Exception as e:
+            st.error(f"Error generating response: {str(e)}")
