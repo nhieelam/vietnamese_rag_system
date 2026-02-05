@@ -23,3 +23,7 @@ GROQ_LLM_MODEL=
 Step 3: Run Streamlit (Frontend UI)
 
 python -m streamlit run app/main.py
+
+
+poppler
+OCR
