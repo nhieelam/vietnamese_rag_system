@@ -1,28 +1,64 @@
-# --- Frontend & UI ---
+# ===============================
+# Python version
+# ===============================
+# Recommended: Python 3.11.3
+
+# ===============================
+# Frontend / UI
+# ===============================
 streamlit
 
-# --- RAG Framework ---
+# ===============================
+# LangChain Core & Ecosystem
+# ===============================
 langchain
+langchain-core
 langchain-community
-langchain-openai
 langchain-text-splitters
 langchain-huggingface
+langchain-openai
 langchain-google-genai
+langchain-groq
 
-# --- Vector Database ---
-chromadb
+# ===============================
+# LLM / Embeddings
+# ===============================
 sentence-transformers
+transformers
+huggingface-hub
+torch
+
+# ===============================
+# Vector Databases
+# ===============================
 faiss-cpu
 tiktoken
 
-# --- Document Processing (PDF & OCR) ---
+# ===============================
+# Document Processing (PDF & OCR)
+# ===============================
 pdfplumber
 pytesseract
 pillow
+opencv-python
 
-# --- Web Framework & Server ---
-fastapi 
-uvicorn[standard]
-
-# --- Utilities ---
+# ===============================
+# Utilities
+# ===============================
 python-dotenv
+pydantic
+loguru
+requests
+tqdm
+
+
+# ===============================
+#PaddleOCR
+# ===============================
+paddleocr
+
+# ===============================
+#PDF to Image Conversion
+# ===============================
+pdf2image
+

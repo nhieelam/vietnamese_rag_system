@@ -1,4 +1,4 @@
-from app.services import initialize_session_state
+from app.services import SessionService
 from app.ui import (
     apply_custom_styles,
     render_sidebar,
@@ -8,7 +8,7 @@ from app.ui import (
 
 
 def main():
-    initialize_session_state()
+    SessionService.initialize()
     
     apply_custom_styles()
     

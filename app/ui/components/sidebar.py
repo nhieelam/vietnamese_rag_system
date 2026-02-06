@@ -1,15 +1,13 @@
+from unittest import result
 import streamlit as st
 from datetime import datetime
-from app.services.file_loader import extract_text_from_file
-from app.services.session_manager import (
-    add_document,
-    remove_document,
-    clear_all_documents,
-    clear_chat_history,
-    document_exists,
-    get_documents
-)
+from app.services import EmbeddingService
+from app.services import FileService
+from app.services import SessionService
 from app.config import AppConfig
+from app.services import VectorStoreService
+from app.services import TextSplitterService
+
 def render_sidebar():
     with st.sidebar:
         _render_upload_section()
@@ -36,19 +34,24 @@ def _render_upload_section():
 def _process_and_add_document(uploaded_file):
     with st.spinner("Processing document..."):
         try:
-            extracted_text = extract_text_from_file(uploaded_file)
+            extracted_text = FileService.extract(uploaded_file)
             
-            if document_exists(uploaded_file.name):
+            if SessionService.document_exists(uploaded_file.name):
                 st.warning("Document already uploaded!")
             else:
                 doc_data = {
-                    "id": len(get_documents()),
+                    "id": len(SessionService.get_documents()),
                     "name": uploaded_file.name,
                     "text": extracted_text,
                     "size": len(extracted_text),
                     "uploaded_at": datetime.now().strftime(AppConfig.UPLOAD_TIMESTAMP_FORMAT)
                 }
-                add_document(doc_data)
+                SessionService.add_document(doc_data)
+                chunks = TextSplitterService.split(doc_data["text"]["text"])
+                VectorStoreService.build_from_chunks(
+                    chunks=chunks,
+                    embedding=EmbeddingService.get_huggingface_embedding(),
+                )
                 st.success(f"✅ Added: {uploaded_file.name}")
                 st.rerun()
         except Exception as e:
@@ -58,7 +61,7 @@ def _process_and_add_document(uploaded_file):
 def _render_document_list():
     st.subheader("Documents")
     
-    documents = get_documents()
+    documents = SessionService.get_documents()
     
     if documents:
         st.caption(f"**{len(documents)} document(s) in knowledge base**")
@@ -69,7 +72,7 @@ def _render_document_list():
                 st.caption(f"Size: {doc['size']:,} characters")
                 
                 if st.button("Remove", key=f"del_{idx}", use_container_width=True):
-                    remove_document(idx)
+                    SessionService.remove_document(idx)
                     st.rerun()
         
         st.divider()
@@ -83,11 +86,11 @@ def _render_action_buttons():
     
     with col1:
         if st.button("Clear All", use_container_width=True):
-            clear_all_documents()
+            SessionService.clear_all_documents()
             st.rerun()
     
     with col2:
         if st.button("New Chat", use_container_width=True):
-            clear_chat_history()
+            SessionService.clear_chat_history()
             st.rerun()
 

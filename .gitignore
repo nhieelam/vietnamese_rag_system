@@ -3,4 +3,6 @@ venv/
 env/
 .venv/
 
-.env
+__pycache__/
+.vscode/launch.json
+venv/
