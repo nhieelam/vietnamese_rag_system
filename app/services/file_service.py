@@ -1,8 +1,8 @@
 import pdfplumber
-import pytesseract
 from PIL import Image
 from typing import Dict, Any
 from app.utils.logger import logger
+from app.orc import TesseractOCRWrapper
 
 
 class FileService:
@@ -156,7 +156,7 @@ class FileService:
                 word_count=word_count
             )
 
-        except pytesseract.TesseractNotFoundError:
+        except ImportError:
             return cls._error(
                 500,
                 "Tesseract OCR not installed",
@@ -170,17 +170,27 @@ class FileService:
 
     @classmethod
     def _run_ocr(cls, image):
+        """
+        Run OCR on image using Tesseract, with Vietnamese as primary language.
+        Falls back to English if Vietnamese extraction fails.
+        """
         try:
-            return (
-                pytesseract.image_to_string(image, lang="vie", config="--psm 6"),
-                "Vietnamese",
-            )
+            ocr_vi = TesseractOCRWrapper(lang='vie')
+            text = ocr_vi.read_image(image)
+            if text.strip():
+                return (text, "Vietnamese")
+            else:
+                logger.warning("No text extracted with Vietnamese, trying English")
+                ocr_en = TesseractOCRWrapper(lang='eng')
+                return (ocr_en.read_image(image), "English")
         except Exception:
             logger.warning("Vietnamese OCR failed, fallback to English")
-            return (
-                pytesseract.image_to_string(image, lang="eng", config="--psm 6"),
-                "English",
-            )
+            try:
+                ocr_en = TesseractOCRWrapper(lang='eng')
+                return (ocr_en.read_image(image), "English")
+            except Exception as e:
+                logger.exception("OCR failed for both Vietnamese and English")
+                raise
 
     # ========= RESPONSE HELPERS =========
     @staticmethod

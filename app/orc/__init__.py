@@ -1,6 +1,6 @@
 
-from .paddle_wrapper import PaddleOCRWrapper
+from .tesseract_wrapper import TesseractOCRWrapper
 
 __all__ = [
-    "PaddleOCRWrapper",
+    "TesseractOCRWrapper",
 ]
