@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 from app.services import CoRAGService
+from app.services import RAGService
 from app.services import SessionService
 from app.config import AppConfig
 
