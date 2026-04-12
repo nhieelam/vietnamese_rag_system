@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 from app.services import CoRAGService
+from app.services import RAGService
 from app.services import SessionService
 from app.config import AppConfig
 
@@ -49,7 +50,11 @@ def _process_user_message(user_input: str, mode: str):
         try:
             answer = ""
             if mode == "RAG":
-                answer = RAGService.get_answer(user_input)
+                result = RAGService.get_answer(user_input)
+                if result.get("status_code") == 200:
+                    answer = (result.get("answer") or "").strip()
+                else:
+                    answer = result.get("message") or "Không tạo được câu trả lời."
             elif mode == "Co-RAG":
                 result = CoRAGService.get_answer(user_input)
                 if result.get("status_code") == 200:
