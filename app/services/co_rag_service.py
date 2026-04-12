@@ -2,6 +2,10 @@
 Co-RAG: collaborative retrieval — decompose the user question into sub-queries,
 retrieve per sub-query, merge/deduplicate chunks, then generate one grounded answer.
 """
+
+from app.service.file_service import FileService
+from app.service.embedding_service import EmbeddingService
+from app.service.rag_service import RAGService
 from __future__ import annotations
 
 import hashlib
@@ -22,28 +26,6 @@ class CoRAGService:
     _K_PER_SUBQUERY = 6
     _MAX_SUB_QUERIES = 4
     _FALLBACK_K = 12
-
-    @classmethod
-    def _init_llm(cls):
-        if AIConfig.LLM_PROVIDER == "openai":
-            from langchain_openai import ChatOpenAI
-
-            return ChatOpenAI(
-                model=AIConfig.OPENAI_LLM_MODEL,
-                temperature=0.3,
-                api_key=AIConfig.OPENAI_API_KEY,
-            )
-
-        if AIConfig.LLM_PROVIDER == "groq":
-            from langchain_groq import ChatGroq
-
-            return ChatGroq(
-                model=AIConfig.GROQ_LLM_MODEL,
-                api_key=AIConfig.GROQ_API_KEY,
-                temperature=0.3,
-            )
-
-        raise ValueError("Unsupported LLM provider")
 
     @classmethod
     def _decompose_prompt(cls) -> PromptTemplate:
@@ -92,9 +74,7 @@ Trả lời:
 """.strip()
         )
 
-    @staticmethod
-    def _format_docs(docs: List[Document]) -> str:
-        return "\n\n".join(doc.page_content for doc in docs)
+
 
     @staticmethod
     def _doc_fingerprint(doc: Document) -> str:
@@ -122,7 +102,7 @@ Trả lời:
 
     @classmethod
     def _generate_subqueries(cls, question: str) -> List[str]:
-        llm = cls._init_llm()
+        llm = RAGService._init_llm()
         prompt = cls._decompose_prompt()
         chain = prompt | llm | StrOutputParser()
         raw = chain.invoke(
@@ -153,7 +133,6 @@ Trả lời:
         merged = cls._merge_unique_docs(per_query_docs)
         return merged, per_query_docs
 
-    # ---------- PUBLIC ----------
     @classmethod
     def get_answer(cls, query: str) -> Dict[str, Any]:
         if not query.strip():
@@ -186,11 +165,11 @@ Trả lời:
 
             rag_chain = (
                 {
-                    "context": lambda _: cls._format_docs(docs),
+                    "context": lambda _: RAGService._format_docs(docs),
                     "question": RunnablePassthrough(),
                 }
                 | cls._answer_prompt()
-                | cls._init_llm()
+                | RAGService._init_llm()
                 | StrOutputParser()
             )
 

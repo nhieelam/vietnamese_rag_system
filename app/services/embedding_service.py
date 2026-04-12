@@ -1,5 +1,4 @@
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import OpenAIEmbeddings
 from app.config.ai_config import AIConfig
 
 
