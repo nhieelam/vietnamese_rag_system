@@ -1,7 +1,7 @@
 from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.config import AIConfig
+from app.config import AppConfig
 from app.utils.logger import logger
 
 
@@ -13,8 +13,8 @@ class TextSplitterService:
             raise ValueError("Text is empty, cannot split")
 
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=AIConfig.CHUNK_SIZE,
-            chunk_overlap=AIConfig.CHUNK_OVERLAP,
+            chunk_size=AppConfig.CHUNK_SIZE,
+            chunk_overlap=AppConfig.CHUNK_OVERLAP,
             separators=[
                 "\n\n",
                 "\n",
@@ -28,7 +28,7 @@ class TextSplitterService:
 
         logger.info(
             f"Split text into {len(chunks)} chunks "
-            f"(chunk_size={AIConfig.CHUNK_SIZE}, overlap={AIConfig.CHUNK_OVERLAP})"
+            f"(chunk_size={AppConfig.CHUNK_SIZE}, overlap={AppConfig.CHUNK_OVERLAP})"
         )
 
         return chunks
