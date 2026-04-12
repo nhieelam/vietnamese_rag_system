@@ -8,4 +8,3 @@ class PaddleOCRWrapper:
     
     def read_image(self, image):
         return self._ocr.predict(image)
-    

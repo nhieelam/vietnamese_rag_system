@@ -3,7 +3,6 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 
 class SessionService:
-    # ---------- Internal ----------
     @staticmethod
     def _has_context():
         try:
@@ -11,7 +10,6 @@ class SessionService:
         except Exception:
             return False
 
-    # ---------- Init ----------
     @classmethod
     def initialize(cls):
         if not cls._has_context():
@@ -35,7 +33,6 @@ class SessionService:
         if "max_tokens" not in st.session_state:
             st.session_state.max_tokens = 800
 
-    # ---------- Vector Store ----------
     @classmethod
     def set_vector_store(cls, vector_store):
         if cls._has_context():
@@ -52,7 +49,6 @@ class SessionService:
         if cls._has_context():
             st.session_state.vector_store = None
 
-    # ---------- Documents ----------
     @classmethod
     def add_document(cls, doc_data: dict):
         if cls._has_context():
@@ -88,7 +84,6 @@ class SessionService:
             for doc in st.session_state.get("documents", [])
         )
 
-    # ---------- Messages ----------
     @classmethod
     def add_message(cls, role: str, content: str, timestamp: str):
         if cls._has_context():

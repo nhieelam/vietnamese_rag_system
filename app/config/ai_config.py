@@ -5,23 +5,19 @@ load_dotenv()
 
 
 class AIConfig:
-    # PROVIDER
+    MODAL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 
-    # OPENAI
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_LLM_MODEL = "gpt-4o"
     OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 
-    # GROQ
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_LLM_MODEL = "llama-3.1-8b-instant"
 
-    # CHUNKING
     CHUNK_SIZE = 1000
     CHUNK_OVERLAP = 200
 
-    # PATHS
     BASE_DIR = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )

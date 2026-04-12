@@ -13,14 +13,6 @@ class RAGService:
 
     @classmethod
     def _init_llm(cls):
-        if AIConfig.LLM_PROVIDER == "openai":
-            from langchain_openai import ChatOpenAI
-
-            return ChatOpenAI(
-                model=AIConfig.OPENAI_LLM_MODEL,
-                temperature=0.3,
-                api_key=AIConfig.OPENAI_API_KEY,
-            )
 
         if AIConfig.LLM_PROVIDER == "groq":
             from langchain_groq import ChatGroq
@@ -65,7 +57,6 @@ class RAGService:
     def _format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
 
-    # ---------- PUBLIC ----------
     @classmethod
     def get_answer(cls, query: str) -> Dict[str, Any]:
         if not query.strip():
