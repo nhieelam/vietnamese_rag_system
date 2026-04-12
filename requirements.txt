@@ -16,8 +16,6 @@ langchain-core
 langchain-community
 langchain-text-splitters
 langchain-huggingface
-langchain-openai
-langchain-google-genai
 langchain-groq
 
 # ===============================
@@ -62,3 +60,4 @@ paddleocr
 # ===============================
 pdf2image
 
+torchvision

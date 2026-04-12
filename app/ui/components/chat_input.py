@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from app.services import RAGService
+from app.services import CoRAGService
 from app.services import SessionService
 from app.config import AppConfig
 
@@ -51,14 +51,14 @@ def _process_user_message(user_input: str, mode: str):
             if mode == "RAG":
                 answer = RAGService.get_answer(user_input)
             elif mode == "Co-RAG":
-                # Assuming you have a CoRAGService with a similar interface
-                # from app.services import CoRAGService 
-                # answer = CoRAGService.get_answer(user_input)
-                st.warning("Co-RAG service is not implemented yet. Using RAG as fallback.")
-                answer = RAGService.get_answer(user_input) # Fallback to RAG for now
+                result = CoRAGService.get_answer(user_input)
+                if result.get("status_code") == 200:
+                    answer = (result.get("answer") or "").strip()
+                else:
+                    answer = result.get("message") or "Không tạo được câu trả lời."
             
             SessionService.add_message("assistant", answer, timestamp)
-            
+     
             st.rerun()
             
         except Exception as e:
