@@ -6,10 +6,6 @@ from app.utils.logger import logger
 
 
 class TextSplitterService:
-    """
-    Text Splitter Service
-    Split raw text into chunks for embedding
-    """
 
     @classmethod
     def split(cls, text: str) -> List[str]:

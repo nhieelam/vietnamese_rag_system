@@ -15,7 +15,6 @@ class FileService:
         "image/png": "image",
     }
 
-    # ========= PUBLIC API =========
     @classmethod
     def extract(cls, uploaded_file) -> Dict[str, Any]:
         try:
@@ -59,7 +58,6 @@ class FileService:
             logger.error(f"Error getting file info: {e}")
             return {"name": "Unknown", "type": "Unknown", "size": 0}
 
-    # ========= INTERNAL =========
     @classmethod
     def _process_pdf(cls, file) -> Dict[str, Any]:
         text_content = ""
@@ -84,15 +82,14 @@ class FileService:
             with pdfplumber.open(file_to_open) as pdf:
                 total_pages = len(pdf.pages)
                 logger.info(f"PDF contains {total_pages} page(s)")
-
                 if total_pages == 0:
+                    logger.info("PDF file is empty (0 pages)")
                     return cls._error(
                         400,
                         "PDF file is empty (0 pages)",
                         total_pages=0
                     )
-
-                # First pass: try to extract text directly from PDF
+                
                 for i, page in enumerate(pdf.pages):
                     try:
                         page_text = page.extract_text()
@@ -101,6 +98,7 @@ class FileService:
                         else:
                             empty_pages.append(i + 1)
                     except Exception:
+                        logger.exception("Error extracting text from PDF page")
                         empty_pages.append(i + 1)
 
                 # If no text extracted, try OCR on scanned pages
@@ -114,13 +112,13 @@ class FileService:
                         logger.warning("OCR also failed to extract text from PDF")
 
             if not text_content.strip():
+                logger.info("No text extracted from PDF. This may be a scanned document.")
                 return cls._error(
                     422,
                     "No text extracted from PDF. This may be a scanned document requiring OCR.",
                     total_pages=total_pages,
                     empty_pages=empty_pages
                 )
-
             extracted = text_content.strip()
             extracted_pages = total_pages - len(empty_pages)
             
@@ -129,7 +127,6 @@ class FileService:
                 f"from {extracted_pages}/{total_pages} pages "
                 f"({len(ocr_pages)} via OCR)"
             )
-
             return cls._success(
                 extracted,
                 f"Extracted text from {extracted_pages}/{total_pages} pages"
@@ -140,7 +137,6 @@ class FileService:
                 ocr_pages=ocr_pages,
                 character_count=len(extracted)
             )
-
         except FileNotFoundError:
             return cls._error(404, "PDF file not found")
         except Exception as e:
@@ -222,12 +218,13 @@ class FileService:
 
     @classmethod
     def _process_image(cls, file) -> Dict[str, Any]:
-        file_to_open = getattr(file, "path", file)
-
+        # file_to_open = getattr(file, "path", file)
+        file_to_open = file.path
+        
         try:
             image = Image.open(file_to_open)
             width, height = image.size
-            logger.info(f"Image size: {width}x{height}")
+            logger.info(f"Processing image with size: {width}x{height}")
 
             if width < 100 or height < 100:
                 return cls._error(
@@ -240,6 +237,7 @@ class FileService:
             text, lang_used = cls._run_ocr(image)
 
             if not text.strip():
+                logger.info("No text detected in image")
                 return cls._error(
                     206,
                     "No text detected in image",
@@ -250,6 +248,7 @@ class FileService:
 
             extracted = text.strip()
             word_count = len(extracted.split())
+            logger.info(f"OCR successful ({lang_used}) , extracted text: {extracted}")
 
             return cls._success(
                 extracted,
@@ -297,7 +296,6 @@ class FileService:
                 logger.exception("OCR failed for both Vietnamese and English")
                 raise
 
-    # ========= RESPONSE HELPERS =========
     @staticmethod
     def _success(text: str, message: str, **metadata):
         return {
