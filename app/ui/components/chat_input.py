@@ -1,7 +1,7 @@
 
 import streamlit as st
 from datetime import datetime
-from app.services import RAGService
+from app.services import CoRAGService
 from app.services import SessionService
 from app.config import AppConfig
 
@@ -38,9 +38,13 @@ def _process_user_message(user_input: str):
     
     with st.spinner("🤔 Thinking..."):
         try:
-            answer = RAGService.get_answer(user_input)
-            
-            SessionService.add_message("assistant", answer, timestamp)
+            result = CoRAGService.get_answer(user_input)
+            if result.get("status_code") == 200:
+                text = (result.get("answer") or "").strip()
+            else:
+                text = result.get("message") or "Không tạo được câu trả lời."
+
+            SessionService.add_message("assistant", text, timestamp)
             
             st.rerun()
             

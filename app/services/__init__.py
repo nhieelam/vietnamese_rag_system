@@ -5,6 +5,7 @@ from .vector_store_service import VectorStoreService
 from .embedding_service import EmbeddingService
 from .text_splitter_service import TextSplitterService
 from .rag_service import RAGService
+from .co_rag_service import CoRAGService
 
 __all__ = [
     "SessionService",
@@ -13,4 +14,5 @@ __all__ = [
     "EmbeddingService",
     "TextSplitterService",
     "RAGService",
+    "CoRAGService",
 ]

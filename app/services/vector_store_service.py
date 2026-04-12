@@ -8,15 +8,9 @@ from app.utils.logger import logger
 
 
 class VectorStoreService:
-    """
-    RAM-only Vector Store Service
-    """
 
     @classmethod
     def build_from_chunks(cls, chunks: List[str], embedding):
-        """
-        Build FAISS vector store from text chunks
-        """
         if not chunks:
             raise ValueError("Chunks is empty")
 
@@ -33,15 +27,9 @@ class VectorStoreService:
 
     @classmethod
     def get_vector_store(cls):
-        """
-        Get current vector store from session
-        """
         return SessionService.get_vector_store()
 
     @classmethod
     def clear(cls):
-        """
-        Clear vector store from RAM
-        """
         SessionService.clear_vector_store()
         logger.info("Vector store cleared from session")
