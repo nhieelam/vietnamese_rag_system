@@ -1,12 +1,8 @@
-"""
-Co-RAG: collaborative retrieval — decompose the user question into sub-queries,
-retrieve per sub-query, merge/deduplicate chunks, then generate one grounded answer.
-"""
-
-from app.service.file_service import FileService
-from app.service.embedding_service import EmbeddingService
-from app.service.rag_service import RAGService
 from __future__ import annotations
+
+from app.services.file_service import FileService
+from app.services.embedding_service import EmbeddingService
+from app.services.rag_service import RAGService
 
 import hashlib
 import re
