@@ -24,7 +24,7 @@ def render_chat_input():
         user_input = st.text_input(
             "Message",
             placeholder="Type your question here...",
-            key="user_input",
+            key="chat_input",
             label_visibility="collapsed",
             disabled=len(SessionService.get_documents()) == 0
         )
@@ -34,12 +34,18 @@ def render_chat_input():
             "Send 📤",
             type="primary",
             use_container_width=True,
-            disabled=len(SessionService.get_documents()) == 0
+            disabled=len(SessionService.get_documents()) == 0,
+            on_click=_handle_send,
+            args=(user_input, mode)
         )
-    
-    if send_button and user_input and user_input.strip():
-        _process_user_message(user_input, mode)
 
+
+def _handle_send(user_input: str, mode: str):
+    if user_input and user_input.strip():
+        _process_user_message(user_input, mode)
+        st.session_state.chat_input = ""
+    else:
+        st.warning("Please enter a message")
 
 
 def _process_user_message(user_input: str, mode: str):
@@ -63,8 +69,6 @@ def _process_user_message(user_input: str, mode: str):
                     answer = result.get("message") or "Không tạo được câu trả lời."
             
             SessionService.add_message("assistant", answer, timestamp)
-     
-            st.rerun()
             
         except Exception as e:
             st.error(f"Error generating response: {str(e)}")
