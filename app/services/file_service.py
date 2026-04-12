@@ -13,6 +13,8 @@ class FileService:
         "application/pdf": "pdf",
         "image/jpeg": "image",
         "image/png": "image",
+        "image/jpg": "image",
+
     }
 
     @classmethod
@@ -24,7 +26,7 @@ class FileService:
             if file_type not in cls.SUPPORTED_TYPES:
                 return cls._error(
                     400,
-                    f"Unsupported file type: {file_type}. Supported types: PDF, JPEG, PNG",
+                    f"Unsupported file type: {file_type}. Supported types: PDF, JPEG, PNG, JPG",
                     file_name=file_name,
                     file_type=file_type
                 )
