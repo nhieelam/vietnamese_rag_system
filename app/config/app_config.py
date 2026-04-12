@@ -25,10 +25,6 @@ class AppConfig:
     TIMESTAMP_FORMAT = "%H:%M"
     UPLOAD_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M"
 
-    DB_DIRECTORY = "./chroma_db"
-    
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-    
-    LLM_MODEL = "gpt-3.5-turbo"  
-    LLM_TEMPERATURE = 0.3
+    CO_RAG_K_PER_SUBQUERY = 6
+    CO_RAG_MAX_SUB_QUERIES = 4
+    CO_RAG_FALLBACK_K = 12

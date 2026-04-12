@@ -1,8 +1,7 @@
 .env
 venv/
-env/
-.venv/
+.env
+.gitignore
 
 __pycache__/
 .vscode/launch.json
-venv/

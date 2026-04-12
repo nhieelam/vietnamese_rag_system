@@ -14,14 +14,13 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 
 from app.config import AIConfig
+from app.config import AppConfig
 from app.services.session_service import SessionService
 from app.utils.logger import logger
 
 
 class CoRAGService:
-    _K_PER_SUBQUERY = 6
-    _MAX_SUB_QUERIES = 4
-    _FALLBACK_K = 12
+
 
     @classmethod
     def _decompose_prompt(cls) -> PromptTemplate:
@@ -90,7 +89,7 @@ Trả lời:
                 continue
             seen.add(key)
             out.append(ln)
-            if len(out) >= cls._MAX_SUB_QUERIES:
+            if len(out) >= AppConfig.CO_RAG_MAX_SUB_QUERIES:
                 break
         if not out:
             return [original.strip()]
@@ -102,7 +101,7 @@ Trả lời:
         prompt = cls._decompose_prompt()
         chain = prompt | llm | StrOutputParser()
         raw = chain.invoke(
-            {"question": question.strip(), "max_q": cls._MAX_SUB_QUERIES}
+            {"question": question.strip(), "max_q": AppConfig.CO_RAG_MAX_SUB_QUERIES}
         )
         return cls._parse_subqueries(raw, question)
 
@@ -140,7 +139,7 @@ Trả lời:
 
         try:
             retriever = vector_store.as_retriever(
-                search_kwargs={"k": cls._K_PER_SUBQUERY}
+                search_kwargs={"k": AppConfig.CO_RAG_K_PER_SUBQUERY}
             )
 
             sub_queries = cls._generate_subqueries(query)
@@ -150,7 +149,7 @@ Trả lời:
 
             if not docs:
                 wide = vector_store.as_retriever(
-                    search_kwargs={"k": cls._FALLBACK_K}
+                    search_kwargs={"k": AppConfig.CO_RAG_FALLBACK_K}
                 )
                 docs = wide.invoke(query)
                 sub_queries = [query.strip()]
