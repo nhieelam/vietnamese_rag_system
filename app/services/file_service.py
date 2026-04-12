@@ -218,8 +218,7 @@ class FileService:
 
     @classmethod
     def _process_image(cls, file) -> Dict[str, Any]:
-        # file_to_open = getattr(file, "path", file)
-        file_to_open = file.path
+        file_to_open = getattr(file, "path", file)
         
         try:
             image = Image.open(file_to_open)

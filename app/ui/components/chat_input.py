@@ -42,8 +42,8 @@ def render_chat_input():
 
 def _handle_send(user_input: str, mode: str):
     if user_input and user_input.strip():
-        _process_user_message(user_input, mode)
         st.session_state.chat_input = ""
+        _process_user_message(user_input, mode)
     else:
         st.warning("Please enter a message")
 
