@@ -3,19 +3,6 @@ import streamlit as st
 from app.services.session_service import SessionService
 
 
-def render_chat_header():
-    st.title("💬 Vietnamese RAG Assistant")
-    st.markdown("Ask questions about your uploaded documents and get comprehensive answers")
-    
-    documents = SessionService.get_documents()
-    if documents:
-        st.success(f"Knowledge base active with {len(documents)} document(s)")
-    else:
-        st.warning("No documents uploaded. Please upload documents from the sidebar to begin.")
-    
-    st.divider()
-
-
 def render_chat_messages():
     chat_container = st.container()
     
