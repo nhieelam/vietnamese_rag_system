@@ -1,11 +1,11 @@
-from typing import Dict, Any
+from typing import Any, Dict
 
-from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 
-from app.services.session_service import SessionService
 from app.config import AIConfig
+from app.services.session_service import SessionService
 from app.utils.logger import logger
 
 
@@ -29,27 +29,24 @@ class RAGService:
     def _init_prompt(cls):
         return PromptTemplate.from_template(
             """
-            Bạn là một trợ lý AI hữu ích.
+            You are a helpful AI assistant.
 
-            Hãy sử dụng thông tin trong ngữ cảnh để trả lời câu hỏi.
-            Bạn có thể suy luận hợp lý từ thông tin có trong tài liệu, 
-            nhưng không được bịa ra thông tin mới.
+            Use only the information from the provided context to answer the user question.
+            You may make reasonable inferences from the context, but never invent new facts.
+            Always answer in the same language as the user question.
 
-            Nếu câu trả lời không được nêu trực tiếp nhưng có thể suy ra
-            một cách hợp lý từ tài liệu, hãy trả lời và nói rõ là
-            "Dựa trên thông tin trong tài liệu, có thể suy ra rằng ...".
+            If the answer is not stated directly but can be inferred, clearly say that it is
+            an inference from the provided documents.
+            If the context does not contain relevant information, clearly say that the information
+            is not found in the provided documents.
 
-            Nếu hoàn toàn không tìm thấy thông tin liên quan trong tài liệu,
-            hãy nói:
-            "Tôi không tìm thấy thông tin này trong tài liệu."".
-
-            Ngữ cảnh:
+            Context:
             {context}
 
-            Câu hỏi:
+            Question:
             {question}
 
-            Trả lời:
+            Answer:
             """.strip()
         )
 
@@ -78,7 +75,7 @@ class RAGService:
 
             rag_chain = (
                 {
-                    "context": retriever | cls._format_docs,
+                    "context": lambda _: cls._format_docs(docs),
                     "question": RunnablePassthrough(),
                 }
                 | cls._init_prompt()
