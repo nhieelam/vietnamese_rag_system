@@ -4,9 +4,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _get_default_provider():
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("GROQ_API_KEY"):
+        return "groq"
+    return "ollama"
+
+
 class AIConfig:
     MODAL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", _get_default_provider()).lower()
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_LLM_MODEL = "gpt-4o"
@@ -14,6 +22,8 @@ class AIConfig:
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_LLM_MODEL = "llama-3.1-8b-instant"
+
+    OLLAMA_LLM_MODEL = "qwen2:0.5b"  
 
     BASE_DIR = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

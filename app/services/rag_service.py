@@ -23,6 +23,14 @@ class RAGService:
                 temperature=0.3,
             )
 
+        if AIConfig.LLM_PROVIDER == "ollama":
+            from langchain_community.chat_models import ChatOllama
+
+            return ChatOllama(
+                model=AIConfig.OLLAMA_LLM_MODEL,
+                temperature=0.3,
+            )
+
         raise ValueError("Unsupported LLM provider")
 
     @classmethod
