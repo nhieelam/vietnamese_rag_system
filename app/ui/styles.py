@@ -34,6 +34,48 @@ def apply_custom_styles():
             flex-direction: column;
             margin-bottom: 16px;
         }
+
+        /* Comparison layout for RAG vs Co-RAG */
+        .compare-title {
+            margin: 8px 0 6px 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .compare-card {
+            border: 1px solid #e6e6e6;
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 12px;
+            background: #fff;
+        }
+
+        .compare-rag {
+            border-left: 4px solid #2a6fdb;
+        }
+
+        .compare-co-rag {
+            border-left: 4px solid #1f8f66;
+        }
+
+        .compare-label {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 2px;
+        }
+
+        .compare-message {
+            max-width: 100%;
+            margin: 4px 0;
+            border-radius: 10px;
+        }
+
+        .compare-time {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 4px;
+        }
         
         /* Input Field Styling */
         .stTextInput > div > div > input {

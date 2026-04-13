@@ -86,7 +86,7 @@ def _render_action_buttons():
     
     with col1:
         if st.button("Clear All", use_container_width=True):
-            SessionService.clear_all_documents()
+            SessionService.clear_documents()
             st.rerun()
     
     with col2:
