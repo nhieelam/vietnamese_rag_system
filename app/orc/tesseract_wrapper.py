@@ -3,7 +3,7 @@ from app.utils.logger import logger
 
 
 class TesseractOCRWrapper:
-    def __init__(self, lang='vie', config='--psm 6'):
+    def __init__(self, lang='vie+eng', config='--psm 6'):
         self.lang = lang
         self.config = config
     

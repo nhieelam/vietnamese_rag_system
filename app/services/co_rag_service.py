@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from app.services.file_service import FileService
-from app.services.embedding_service import EmbeddingService
-from app.services.rag_service import RAGService
-
 import hashlib
 import re
 from typing import Any, Dict, List, Set
@@ -13,31 +9,34 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 
-from app.config import AIConfig
 from app.config import AppConfig
+from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.utils.logger import logger
 
 
 class CoRAGService:
 
-
     @classmethod
     def _decompose_prompt(cls) -> PromptTemplate:
         return PromptTemplate.from_template(
             """
-Bạn là bộ phân tích truy vấn cho hệ thống tìm kiếm tài liệu.
+You are a query decomposition component for a document retrieval system.
 
-Nhiệm vụ: từ MỘT câu hỏi người dùng, tạo tối đa {max_q} câu hỏi con ngắn, cụ thể để truy xuất đoạn văn liên quan trong kho tài liệu.
-- Giữ nguyên ngôn ngữ của câu gốc (tiếng Việt nếu câu hỏi là tiếng Việt).
-- Mỗi dòng CHỈ chứa một câu hỏi con, không đánh số, không giải thích, không tiêu đề.
-- Dòng đầu tiên nên là một diễn đạt gần với câu hỏi gốc (để không mất ngữ nghĩa).
-- Nếu câu hỏi đã đủ đơn giản, chỉ cần một dòng trùng ý với câu hỏi.
+Task: From ONE user question, generate up to {max_q} short, specific sub-queries
+that help retrieve relevant passages from the document store.
 
-Câu hỏi gốc:
+Rules:
+- Keep exactly the same language as the original user question.
+- Each line must contain exactly one sub-query.
+- Do not add numbering, explanations, headers, or extra formatting.
+- The first line should be closest to the original question wording.
+- If the question is already simple enough, return only one line equivalent to the original question.
+
+Original question:
 {question}
 
-Câu hỏi con (mỗi dòng một câu):
+Sub-queries (one per line):
 """.strip()
         )
 
@@ -45,31 +44,26 @@ Câu hỏi con (mỗi dòng một câu):
     def _answer_prompt(cls) -> PromptTemplate:
         return PromptTemplate.from_template(
             """
-Bạn là một trợ lý AI hữu ích.
+You are a helpful AI assistant.
 
-Hãy sử dụng thông tin trong ngữ cảnh để trả lời câu hỏi.
-Bạn có thể suy luận hợp lý từ thông tin có trong tài liệu,
-nhưng không được bịa ra thông tin mới.
+Use only the information from the provided context to answer the user question.
+You may make reasonable inferences from the context, but never invent new facts.
+Always answer in the same language as the user question.
 
-Nếu câu trả lời không được nêu trực tiếp nhưng có thể suy ra
-một cách hợp lý từ tài liệu, hãy trả lời và nói rõ là
-"Dựa trên thông tin trong tài liệu, có thể suy ra rằng ...".
+If the answer is not stated directly but can be inferred, clearly say that it is
+an inference from the provided documents.
+If the context does not contain relevant information, clearly say that the information
+is not found in the provided documents.
 
-Nếu hoàn toàn không tìm thấy thông tin liên quan trong tài liệu,
-hãy nói:
-"Tôi không tìm thấy thông tin này trong tài liệu.".
-
-Ngữ cảnh (có thể từ nhiều lần truy xuất, đã gộp):
+Context (merged from multiple retrieval rounds):
 {context}
 
-Câu hỏi:
+Question:
 {question}
 
-Trả lời:
+Answer:
 """.strip()
         )
-
-
 
     @staticmethod
     def _doc_fingerprint(doc: Document) -> str:
