@@ -6,6 +6,7 @@ import os
 from app.utils.logger import logger
 from app.orc import TesseractOCRWrapper
 from app.orc.pdf_convert import pdf_to_images
+import docx
 
 
 class FileService:
@@ -14,7 +15,7 @@ class FileService:
         "image/jpeg": "image",
         "image/png": "image",
         "image/jpg": "image",
-
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     }
 
     @classmethod
@@ -26,13 +27,16 @@ class FileService:
             if file_type not in cls.SUPPORTED_TYPES:
                 return cls._error(
                     400,
-                    f"Unsupported file type: {file_type}. Supported types: PDF, JPEG, PNG, JPG",
+                    f"Unsupported file type: {file_type}. Supported types: PDF, JPEG, PNG, JPG, DOCX",
                     file_name=file_name,
                     file_type=file_type
                 )
 
             if cls.SUPPORTED_TYPES[file_type] == "pdf":
                 return cls._process_pdf(uploaded_file)
+            
+            if cls.SUPPORTED_TYPES[file_type] == "docx":
+                return cls._process_doc(uploaded_file)
 
             logger.info("Processing as image with OCR...")
             return cls._process_image(uploaded_file)
@@ -59,6 +63,28 @@ class FileService:
         except Exception as e:
             logger.error(f"Error getting file info: {e}")
             return {"name": "Unknown", "type": "Unknown", "size": 0}
+
+    @classmethod
+    def _process_doc(cls, file) -> Dict[str, Any]:
+        try:
+            document = docx.Document(file)
+            text_content = "\n".join([para.text for para in document.paragraphs])
+            
+            if not text_content.strip():
+                logger.info("DOCX file is empty or contains no text.")
+                return cls._error(422, "DOCX file is empty or contains no text.")
+
+            extracted = text_content.strip()
+            logger.info(f"DOCX extraction complete: {len(extracted)} chars")
+            
+            return cls._success(
+                extracted,
+                "Successfully extracted text from DOCX file.",
+                character_count=len(extracted)
+            )
+        except Exception as e:
+            logger.exception("DOCX extraction failed")
+            return cls._error(500, f"DOCX extraction failed: {e}")
 
     @classmethod
     def _process_pdf(cls, file) -> Dict[str, Any]:

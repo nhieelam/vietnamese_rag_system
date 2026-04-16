@@ -20,7 +20,7 @@ def _render_upload_section():
     st.subheader("Upload Documents")
     
     uploaded_file = st.file_uploader(
-        "Choose a file (PDF or Image)",
+        "Choose a file (PDF, Image, DOCX)",
         type=AppConfig.ALLOWED_FILE_TYPES,
         help=f"Upload internal departmental documents (up to {AppConfig.MAX_FILE_SIZE_MB} pages)",
         key="file_uploader"

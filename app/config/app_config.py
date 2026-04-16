@@ -7,7 +7,7 @@ class AppConfig:
     APP_VERSION = "v1.0"
     APP_DESCRIPTION = "Ask questions about your uploaded documents and get comprehensive answers"
     
-    ALLOWED_FILE_TYPES = ["pdf", "png", "jpg", "jpeg"]
+    ALLOWED_FILE_TYPES = ["pdf", "png", "jpg", "jpeg", "docx"]
     MAX_FILE_SIZE_MB = 10
     
     DEFAULT_MAX_TOKENS = 800
