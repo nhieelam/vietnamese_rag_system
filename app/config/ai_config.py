@@ -23,7 +23,7 @@ class AIConfig:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_LLM_MODEL = "llama-3.1-8b-instant"
 
-    OLLAMA_LLM_MODEL = "qwen2:0.5b"  
+    OLLAMA_LLM_MODEL = "qwen2.5:7b"  
 
     BASE_DIR = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

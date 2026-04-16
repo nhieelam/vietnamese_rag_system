@@ -8,3 +8,5 @@ pip install -r requirements.txt
 Step 2: Run Streamlit (Frontend UI)
 python -m streamlit run app/main.py
 
+ollama run qwen2.5:7b
+ollama pull qwen2.5:7b
