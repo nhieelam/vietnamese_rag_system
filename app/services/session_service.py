@@ -1,6 +1,11 @@
 import streamlit as st
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_community.chat_message_histories import ChatMessageHistory
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+# Store chat history objects in a simple in-memory dictionary.
+# This prevents LangChain from modifying Streamlit's session_state directly.
+store = {}
 
 class SessionService:
     @staticmethod
@@ -97,13 +102,28 @@ class SessionService:
     def clear_chat_history(cls):
         if cls._has_context():
             st.session_state.messages = []
+            # Also clear the in-memory store
+            if "default_session" in store:
+                store["default_session"].clear()
 
     @classmethod
-    def get_messages(cls):
+    def get_messages_for_ui(cls):
+        """Gets messages formatted as a list of dicts for UI rendering."""
         if not cls._has_context():
             return []
+        return st.session_state.get("messages", [])
 
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
-
-        return st.session_state.messages
+    @classmethod
+    def get_chat_history(cls, session_id: str = "default"):
+        """
+        Gets the LangChain ChatMessageHistory object from an in-memory store.
+        """
+        if session_id not in store:
+            history = ChatMessageHistory()
+            for msg in cls.get_messages_for_ui():
+                if msg["role"] == "user":
+                    history.add_user_message(msg["content"])
+                elif msg["role"] == "assistant":
+                    history.add_ai_message(msg["content"])
+            store[session_id] = history
+        return store[session_id]

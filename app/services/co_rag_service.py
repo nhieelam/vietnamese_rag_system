@@ -2,20 +2,79 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
+from operator import itemgetter
 
+from langchain.chains.llm import LLMChain
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.documents import Document
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.retrievers import BaseRetriever
 
-from app.config import AppConfig
+from app.config import AIConfig, AppConfig
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.utils.logger import logger
 
 
 class CoRAGService:
+
+    @classmethod
+    def _init_llm(cls):
+        return AIConfig.get_llm_instance()
+
+    @classmethod
+    def _create_contextualize_chain(cls) -> Runnable:
+        """
+        Creates a chain to rephrase the user's question based on chat history
+        to form a standalone question.
+        """
+        contextualize_q_system_prompt = (
+            "Given a chat history and the latest user question "
+            "which might reference context in the chat history, "
+            "formulate a standalone question which can be understood "
+            "without the chat history. Do NOT answer the question, "
+            "just reformulate it if needed and otherwise return it as is."
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", contextualize_q_system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{question}"),
+            ]
+        )
+        return prompt | cls._init_llm() | StrOutputParser()
+
+    @classmethod
+    def _create_decomposition_chain(cls) -> LLMChain:
+        template = """
+        You are a helpful AI assistant.
+
+        Use only the information from the provided context to answer the user question.
+        You may make reasonable inferences from the context, but never invent new facts.
+        Always answer in the same language as the user question.
+
+        If the answer is not stated directly but can be inferred, clearly say that it is
+        an inference from the provided documents.
+        If the context does not contain relevant information, clearly say that the information
+        is not found in the provided documents.
+
+        Context (merged from multiple retrieval rounds):
+        {context}
+
+        Question:
+        {question}
+
+        Answer:
+        """.strip()
+        prompt = PromptTemplate.from_template(template)
+        return LLMChain(
+            llm=cls._init_llm(),
+            prompt=prompt,
+            output_parser=JsonOutputParser()
+        )
 
     @classmethod
     def _decompose_prompt(cls) -> PromptTemplate:
@@ -37,31 +96,6 @@ Original question:
 {question}
 
 Sub-queries (one per line):
-""".strip()
-        )
-
-    @classmethod
-    def _answer_prompt(cls) -> PromptTemplate:
-        return PromptTemplate.from_template(
-            """
-You are a helpful AI assistant.
-
-Use only the information from the provided context to answer the user question.
-You may make reasonable inferences from the context, but never invent new facts.
-Always answer in the same language as the user question.
-
-If the answer is not stated directly but can be inferred, clearly say that it is
-an inference from the provided documents.
-If the context does not contain relevant information, clearly say that the information
-is not found in the provided documents.
-
-Context (merged from multiple retrieval rounds):
-{context}
-
-Question:
-{question}
-
-Answer:
 """.strip()
         )
 
@@ -123,6 +157,52 @@ Answer:
         return merged, per_query_docs
 
     @classmethod
+    def _create_synthesis_chain(cls) -> Runnable:
+        """
+        Creates a chain to synthesize the final answer from the retrieved context
+        and the original question.
+        """
+        template = """
+        You are a helpful AI assistant.
+
+        Synthesize a comprehensive answer from the provided context, which was
+        retrieved based on multiple sub-queries.
+        The context is a collection of passages from internal documents.
+
+        Rules:
+        - Use only the information from the provided context. Do not invent facts.
+        - If the context does not contain relevant information, clearly state that
+          the answer cannot be found in the documents.
+        - Answer in the same language as the original question.
+        - Structure the answer clearly. If the question has multiple parts,
+          address each one.
+
+        Context (merged from multiple retrieval rounds):
+        {context}
+
+        Original Question:
+        {question}
+
+        Final Answer:
+        """.strip()
+        prompt = PromptTemplate.from_template(template)
+        return prompt | cls._init_llm() | StrOutputParser()
+
+    @classmethod
+    def _run_sub_queries(
+        cls, retriever: BaseRetriever, sub_queries: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Executes retrieval for each sub-query and merges the results.
+        """
+        merged_docs, per_query_docs = cls._retrieve_for_queries(retriever, sub_queries)
+        return {
+            "sub_queries": sub_queries,
+            "per_query_docs": per_query_docs,
+            "context": RAGService._format_docs(merged_docs),
+        }
+
+    @classmethod
     def get_answer(cls, query: str) -> Dict[str, Any]:
         if not query.strip():
             return cls._error(400, "Query is empty")
@@ -136,44 +216,57 @@ Answer:
                 search_kwargs={"k": AppConfig.CO_RAG_K_PER_SUBQUERY}
             )
 
-            sub_queries = cls._generate_subqueries(query)
-            docs, per_query_breakdown = cls._retrieve_for_queries(
-                retriever, sub_queries
-            )
+            # 1. Chain để tạo câu hỏi độc lập dựa trên lịch sử
+            contextualize_chain = cls._create_contextualize_chain()
 
-            if not docs:
-                wide = vector_store.as_retriever(
-                    search_kwargs={"k": AppConfig.CO_RAG_FALLBACK_K}
+            # 2. Chain để tổng hợp câu trả lời cuối cùng
+            synthesis_chain = cls._create_synthesis_chain()
+
+            # 3. Xây dựng chain Co-RAG hoàn chỉnh
+            co_rag_chain = (
+                RunnablePassthrough.assign(
+                    sub_queries=RunnableLambda(
+                        lambda x: cls._generate_subqueries(x["standalone_question"])
+                    )
                 )
-                docs = wide.invoke(query)
-                sub_queries = [query.strip()]
-                per_query_breakdown = [docs]
-
-            if not docs:
-                return cls._error(404, "No relevant documents found")
-
-            rag_chain = (
-                {
-                    "context": lambda _: RAGService._format_docs(docs),
-                    "question": RunnablePassthrough(),
-                }
-                | cls._answer_prompt()
-                | RAGService._init_llm()
-                | StrOutputParser()
+                | RunnablePassthrough.assign(
+                    retrieval_results=lambda x: cls._run_sub_queries(
+                        retriever, x["sub_queries"]
+                    )
+                )
+                | (lambda x: {
+                    "context": x["retrieval_results"]["context"],
+                    "question": x["standalone_question"]
+                })
+                | synthesis_chain
             )
 
-            answer = rag_chain.invoke(query)
+            # 4. Kết hợp chain hội thoại và chain Co-RAG
+            full_chain = RunnablePassthrough.assign(
+                standalone_question=contextualize_chain,
+                question=itemgetter("question")
+            ) | co_rag_chain
+
+
+            # 5. Bọc chain với trình quản lý lịch sử
+            conversational_chain = RunnableWithMessageHistory(
+                full_chain,
+                SessionService.get_chat_history,
+                input_messages_key="question",
+                history_messages_key="chat_history",
+            )
+
+            # 6. Thực thi chain
+            answer = conversational_chain.invoke(
+                {"question": query},
+                config={"configurable": {"session_id": "default_session"}}
+            )
 
             return {
                 "status_code": 200,
                 "answer": answer.strip(),
                 "message": "OK",
-                "metadata": {
-                    "mode": "co_rag",
-                    "sub_queries": sub_queries,
-                    "retrieved_docs_count": len(docs),
-                    "per_subquery_counts": [len(d) for d in per_query_breakdown],
-                },
+                "metadata": {},
             }
 
         except Exception as e:
