@@ -35,6 +35,7 @@ def _handle_send(user_input: str):
     if user_input and user_input.strip():
         st.session_state.chat_input = ""
         _process_user_message(user_input)
+        st.session_state.message_sent = True
     else:
         st.warning("Please enter a message")
 
@@ -58,41 +59,50 @@ def _process_user_message(user_input: str):
     with st.spinner(spinner_msg):
         try:
             if mode == AppConfig.ANSWER_MODE_RAG:
-                # Only RAG
-                rag_result = RAGService.get_answer(user_input)
-                if rag_result.get("status_code") == 200:
-                    rag_answer = (rag_result.get("answer") or "").strip()
-                else:
-                    rag_answer = rag_result.get("message") or "Không tạo được câu trả lời."
+                # Only RAG with citations
+                rag_result = RAGService.get_answer_with_citations(user_input)
                 
-                SessionService.add_message("assistant", f"[RAG]\n{rag_answer}", timestamp)
+                message = {
+                    "role": "assistant",
+                    "content": rag_result.answer,
+                    "citations": rag_result.citations,
+                    "mode": "RAG"
+                }
+                SessionService.add_message_with_citations("assistant", message, timestamp)
             
             elif mode == AppConfig.ANSWER_MODE_CO_RAG:
-                # Only Co-RAG
-                co_rag_result = CoRAGService.get_answer(user_input)
-                if co_rag_result.get("status_code") == 200:
-                    co_rag_answer = (co_rag_result.get("answer") or "").strip()
-                else:
-                    co_rag_answer = co_rag_result.get("message") or "Không tạo được câu trả lời."
+                # Only Co-RAG with citations
+                co_rag_result = CoRAGService.get_answer_with_citations(user_input)
                 
-                SessionService.add_message("assistant", f"[Co-RAG]\n{co_rag_answer}", timestamp)
+                message = {
+                    "role": "assistant",
+                    "content": co_rag_result.answer,
+                    "citations": co_rag_result.citations,
+                    "mode": "Co-RAG"
+                }
+                SessionService.add_message_with_citations("assistant", message, timestamp)
             
             else:  # ANSWER_MODE_BOTH
-                # Both RAG and Co-RAG
-                rag_result = RAGService.get_answer(user_input)
-                if rag_result.get("status_code") == 200:
-                    rag_answer = (rag_result.get("answer") or "").strip()
-                else:
-                    rag_answer = rag_result.get("message") or "Không tạo được câu trả lời."
-
-                co_rag_result = CoRAGService.get_answer(user_input)
-                if co_rag_result.get("status_code") == 200:
-                    co_rag_answer = (co_rag_result.get("answer") or "").strip()
-                else:
-                    co_rag_answer = co_rag_result.get("message") or "Không tạo được câu trả lời."
-
-                SessionService.add_message("assistant", f"[RAG]\n{rag_answer}", timestamp)
-                SessionService.add_message("assistant", f"[Co-RAG]\n{co_rag_answer}", timestamp)
-            
+                # Both RAG and Co-RAG with citations
+                rag_result = RAGService.get_answer_with_citations(user_input)
+                co_rag_result = CoRAGService.get_answer_with_citations(user_input)
+                
+                rag_message = {
+                    "role": "assistant",
+                    "content": rag_result.answer,
+                    "citations": rag_result.citations,
+                    "mode": "RAG"
+                }
+                
+                co_rag_message = {
+                    "role": "assistant",
+                    "content": co_rag_result.answer,
+                    "citations": co_rag_result.citations,
+                    "mode": "Co-RAG"
+                }
+                
+                SessionService.add_message_with_citations("assistant", rag_message, timestamp)
+                SessionService.add_message_with_citations("assistant", co_rag_message, timestamp)
+        
         except Exception as e:
             st.error(f"Error generating response: {str(e)}")

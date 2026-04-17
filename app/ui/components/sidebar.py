@@ -74,9 +74,17 @@ def _process_and_add_document(uploaded_file):
                 }
                 SessionService.add_document(doc_data)
                 chunks = TextSplitterService.split(doc_data["text"]["text"])
+                
+                # Truyền metadata để tracking source document
+                metadata = {
+                    "source": uploaded_file.name,
+                    "document_id": doc_data["id"]
+                }
+                
                 VectorStoreService.build_from_chunks(
                     chunks=chunks,
                     embedding=EmbeddingService.get_huggingface_embedding(),
+                    metadata=metadata
                 )
                 st.success(f"✅ Added: {uploaded_file.name}")
                 st.rerun()
