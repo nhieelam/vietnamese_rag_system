@@ -1,8 +1,9 @@
 from typing import Any, Dict
 
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from app.config import AIConfig
 from app.services.session_service import SessionService
@@ -16,29 +17,52 @@ class RAGService:
         return AIConfig.get_llm_instance()
 
     @classmethod
-    def _init_prompt(cls):
-        return PromptTemplate.from_template(
-            """
-            You are a helpful AI assistant.
-
-            Use only the information from the provided context to answer the user question.
-            You may make reasonable inferences from the context, but never invent new facts.
-            Always answer in the same language as the user question.
-
-            If the answer is not stated directly but can be inferred, clearly say that it is
-            an inference from the provided documents.
-            If the context does not contain relevant information, clearly say that the information
-            is not found in the provided documents.
-
-            Context:
-            {context}
-
-            Question:
-            {question}
-
-            Answer:
-            """.strip()
+    def _create_history_aware_retriever(cls, retriever):
+        """
+        Creates a chain that rephrases the user's question based on chat history
+        to form a standalone question for document retrieval.
+        """
+        contextualize_q_system_prompt = (
+            "Given a chat history and the latest user question "
+            "which might reference context in the chat history, "
+            "formulate a standalone question which can be understood "
+            "without the chat history. Do NOT answer the question, "
+            "just reformulate it if needed and otherwise return it as is."
         )
+        contextualize_q_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", contextualize_q_system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
+        return create_history_aware_retriever(
+            cls._init_llm(), retriever, contextualize_q_prompt
+        )
+
+    @classmethod
+    def _create_document_chain(cls):
+        """
+        Creates a chain that answers a question based on a given context
+        (retrieved documents) and chat history.
+        """
+        qa_system_prompt = (
+            "You are an assistant for question-answering tasks. "
+            "Use the following pieces of retrieved context to answer "
+            "the question. If you don't know the answer, just say "
+            "that you don't know. Use three sentences maximum and keep the "
+            "answer concise."
+            "\n\n"
+            "{context}"
+        )
+        qa_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", qa_system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
+        return create_stuff_documents_chain(cls._init_llm(), qa_prompt)
 
     @staticmethod
     def _format_docs(docs):
@@ -55,32 +79,41 @@ class RAGService:
             return cls._error(400, "No documents uploaded yet")
 
         try:
-            retriever = vector_store.as_retriever(
-                search_kwargs={"k": 10}
+            retriever = vector_store.as_retriever(search_kwargs={"k": 10})
+
+            # 1. Create a history-aware retriever
+            history_aware_retriever = cls._create_history_aware_retriever(retriever)
+
+            # 2. Create the main document chain for answering
+            question_answer_chain = cls._create_document_chain()
+
+            # 3. Combine them into the final retrieval chain
+            rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+
+            # 4. Wrap the chain to manage history automatically
+            conversational_rag_chain = RunnableWithMessageHistory(
+                rag_chain,
+                SessionService.get_chat_history,  # Use the correct history method
+                input_messages_key="input",
+                history_messages_key="chat_history",
+                output_messages_key="answer",
             )
 
-            docs = retriever.invoke(query)
-            if not docs:
-                return cls._error(404, "No relevant documents found")
-
-            rag_chain = (
-                {
-                    "context": lambda _: cls._format_docs(docs),
-                    "question": RunnablePassthrough(),
-                }
-                | cls._init_prompt()
-                | cls._init_llm()
-                | StrOutputParser()
+            # 5. Invoke the chain with the user's query
+            result = conversational_rag_chain.invoke(
+                {"input": query},
+                config={"configurable": {"session_id": "default_session"}}
             )
-
-            answer = rag_chain.invoke(query)
+            
+            answer = result.get("answer", "")
+            retrieved_docs = result.get("context", [])
 
             return {
                 "status_code": 200,
                 "answer": answer.strip(),
                 "message": "OK",
                 "metadata": {
-                    "retrieved_docs_count": len(docs)
+                    "retrieved_docs_count": len(retrieved_docs)
                 },
             }
 

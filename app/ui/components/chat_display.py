@@ -1,4 +1,3 @@
-
 import streamlit as st
 from app.services.session_service import SessionService
 
@@ -18,7 +17,7 @@ def render_chat_messages():
     chat_container = st.container()
     
     with chat_container:
-        messages = SessionService.get_messages()
+        messages = SessionService.get_messages_for_ui() # Use the correct method for UI
         
         if not messages:
             _render_welcome_message()
