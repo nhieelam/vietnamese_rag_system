@@ -1,44 +1,19 @@
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
-def _get_default_provider():
-    if os.getenv("OPENAI_API_KEY"):
-        return "openai"
-    if os.getenv("GROQ_API_KEY"):
-        return "groq"
-    return "ollama"
-
-
 class AIConfig:
     MODAL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", _get_default_provider()).lower()
 
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    OPENAI_LLM_MODEL = "gpt-4o"
-    OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
-
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    GROQ_LLM_MODEL = "llama-3.1-8b-instant"
-
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
     OLLAMA_LLM_MODEL = "qwen2.5:7b"  
 
-    BASE_DIR = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
-    DATA_DIR = os.path.join(BASE_DIR, "data")
-    VECTOR_STORE_DIR = os.path.join(DATA_DIR, "vector_store")
-    UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
-
     @classmethod
-    def validate(cls):
-        if cls.LLM_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
-            raise ValueError("Missing OPENAI_API_KEY")
+    def get_llm_instance(cls):
+        """Initializes and returns the LLM instance based on the provider."""
+        if cls.LLM_PROVIDER == "ollama":
+            from langchain_community.chat_models import ChatOllama
 
-        if cls.LLM_PROVIDER == "groq" and not cls.GROQ_API_KEY:
-            raise ValueError("Missing GROQ_API_KEY")
+            return ChatOllama(
+                model=cls.OLLAMA_LLM_MODEL,
+                temperature=0.3,
+            )
 
-        os.makedirs(cls.VECTOR_STORE_DIR, exist_ok=True)
-        os.makedirs(cls.UPLOAD_DIR, exist_ok=True)
+        raise ValueError(f"Unsupported LLM provider: {cls.LLM_PROVIDER}")
