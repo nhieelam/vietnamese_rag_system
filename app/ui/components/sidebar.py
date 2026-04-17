@@ -10,14 +10,40 @@ from app.services import TextSplitterService
 
 def render_sidebar():
     with st.sidebar:
+        _render_answer_mode_section()
+        st.divider()
         _render_upload_section()
         st.divider()
         _render_document_list()
 
 
+def _render_answer_mode_section():
+    st.subheader("Answer Mode")
+    
+    mode = st.session_state.get("answer_mode", AppConfig.ANSWER_MODE_DEFAULT)
+    if mode not in AppConfig.ANSWER_MODE_ORDER:
+        mode = AppConfig.ANSWER_MODE_DEFAULT
+    
+    selected_mode = st.selectbox(
+        "Choose answer mode",
+        options=AppConfig.ANSWER_MODE_ORDER,
+        index=AppConfig.ANSWER_MODE_ORDER.index(mode),
+        key="answer_mode_selectbox",
+        label_visibility="collapsed"
+    )
+    
+    st.session_state.answer_mode = selected_mode
+    
+    # Display mode description
+    if selected_mode == AppConfig.ANSWER_MODE_RAG:
+        st.info("📚 **RAG Only**: Fast responses using traditional retrieval-augmented generation")
+    elif selected_mode == AppConfig.ANSWER_MODE_CO_RAG:
+        st.info("🔀 **Co-RAG Only**: Generates multiple sub-queries for comprehensive retrieval")
+    else:
+        st.info("🤝 **RAG & Co-RAG**: Combines both approaches for the best results")
+
 
 def _render_upload_section():
-    st.subheader("Upload Documents")
     
     uploaded_file = st.file_uploader(
         "Choose a file (PDF, Image, DOCX)",
