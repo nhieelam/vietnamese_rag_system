@@ -5,7 +5,7 @@ import tempfile
 import os
 from app.utils.logger import logger
 from app.orc import TesseractOCRWrapper
-from app.orc.pdf_convert import pdf_to_images
+from app.utils.pdf_convert import pdf_to_images
 import docx
 
 

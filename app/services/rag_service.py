@@ -13,25 +13,7 @@ class RAGService:
 
     @classmethod
     def _init_llm(cls):
-
-        if AIConfig.LLM_PROVIDER == "groq":
-            from langchain_groq import ChatGroq
-
-            return ChatGroq(
-                model=AIConfig.GROQ_LLM_MODEL,
-                api_key=AIConfig.GROQ_API_KEY,
-                temperature=0.3,
-            )
-
-        if AIConfig.LLM_PROVIDER == "ollama":
-            from langchain_community.chat_models import ChatOllama
-
-            return ChatOllama(
-                model=AIConfig.OLLAMA_LLM_MODEL,
-                temperature=0.3,
-            )
-
-        raise ValueError("Unsupported LLM provider")
+        return AIConfig.get_llm_instance()
 
     @classmethod
     def _init_prompt(cls):
