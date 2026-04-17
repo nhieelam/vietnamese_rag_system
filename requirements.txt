@@ -1,15 +1,13 @@
-# ===============================
-# Python version
-# ===============================
-# Recommended: Python 3.11.3
+# Find PyTorch wheels here
+-f https://download.pytorch.org/whl/torch_stable.html
 
 # ===============================
-# Frontend / UI
+# Core Framework
 # ===============================
 streamlit==1.35.0
 
 # ===============================
-# LangChain Core & Ecosystem (Synchronized Versions)
+# LangChain Ecosystem (Synchronized)
 # ===============================
 langchain==0.2.5
 langchain-core==0.2.9
@@ -18,52 +16,36 @@ langchain-text-splitters==0.2.1
 langchain-huggingface==0.0.3
 
 # ===============================
-# LLM / Embeddings
+# LLM, Embeddings & Torch
 # ===============================
-sentence-transformers==2.7.0
-transformers==4.41.2
+# CPU-only versions for broader compatibility
 torch==2.3.1+cpu
 torchvision==0.18.1+cpu
-
-# ===============================
-# Vector Databases
-# ===============================
-faiss-cpu==1.8.0
+transformers==4.41.2
+sentence-transformers==2.7.0
+ollama==0.2.1
 tiktoken
 
 # ===============================
-# Document Processing (PDF & OCR)
+# Vector Database
 # ===============================
-pdfplumber
-pytesseract
-pillow==10.3.0
-opencv-python
+faiss-cpu==1.8.0
+
+# ===============================
+# Document Processing
+# ===============================
+python-docx==1.1.2
 PyMuPDF==1.24.5
+pdfplumber
+pdf2image
+pillow==10.3.0
+pytesseract
+opencv-python
 
 # ===============================
 # Utilities
 # ===============================
-python-dotenv==1.0.1
 pydantic
 loguru
 requests
 tqdm
-
-# ===============================
-# PaddleOCR
-# ===============================
-paddleocr
-
-# ===============================
-# PDF to Image Conversion
-# ===============================
-pdf2image
-
-python-docx==1.1.2
-
-# ===============================
-# Ollama
-# ===============================
-ollama==0.2.1
-
--f https://download.pytorch.org/whl/torch_stable.html
