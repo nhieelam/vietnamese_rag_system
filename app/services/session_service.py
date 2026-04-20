@@ -99,6 +99,18 @@ class SessionService:
             })
 
     @classmethod
+    def add_message_with_citations(cls, role: str, message: dict, timestamp: str):
+        """Add message with citations support"""
+        if cls._has_context():
+            message_obj = {
+                "role": role,
+                "timestamp": timestamp
+            }
+            # Merge message dict (contains content, citations, mode, etc.)
+            message_obj.update(message)
+            st.session_state.messages.append(message_obj)
+
+    @classmethod
     def clear_chat_history(cls):
         if cls._has_context():
             st.session_state.messages = []

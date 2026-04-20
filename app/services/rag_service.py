@@ -8,6 +8,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from app.config import AIConfig
 from app.services.session_service import SessionService
 from app.utils.logger import logger
+from app.models.citation import Citation, AnswerWithCitations
 
 
 class RAGService:
@@ -120,6 +121,94 @@ class RAGService:
         except Exception as e:
             logger.exception("RAG failed")
             return cls._error(500, str(e))
+
+    @classmethod
+    def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
+        """Get answer with source citations"""
+        if not query.strip():
+            return AnswerWithCitations(
+                answer="Query is empty",
+                citations=[],
+                mode="RAG"
+            )
+
+        vector_store = SessionService.get_vector_store()
+
+        if not vector_store:
+            return AnswerWithCitations(
+                answer="No documents uploaded yet",
+                citations=[],
+                mode="RAG"
+            )
+
+        try:
+            # Tìm kiếm documents liên quan
+            retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+            history_aware_retriever = cls._create_history_aware_retriever(retriever)
+            
+            # Lấy chat history từ session
+            chat_history_obj = SessionService.get_chat_history("default_session")
+            chat_history_messages = chat_history_obj.messages if hasattr(chat_history_obj, 'messages') else []
+            
+            # Lấy retrieved documents
+            retrieved_docs = history_aware_retriever.invoke(
+                {
+                    "input": query,
+                    "chat_history": chat_history_messages
+                }
+            )
+            
+            # Tạo citations từ retrieved documents
+            citations = []
+            for doc in retrieved_docs:
+                metadata = doc.metadata or {}
+                source_name = metadata.get('source', 'Unknown Document')
+                
+                citation = Citation(
+                    source_name=source_name,
+                    page_number=metadata.get('page', None),
+                    chunk_id=metadata.get('chunk_id', None),
+                    relevance_score=metadata.get('score', 0.0),
+                    excerpt=doc.page_content[:200]  # Lấy 200 ký tự đầu
+                )
+                citations.append(citation)
+            
+            # Tạo prompt kèm context từ retrieved documents
+            question_answer_chain = cls._create_document_chain()
+            
+            rag_chain = create_retrieval_chain(
+                history_aware_retriever,
+                question_answer_chain
+            )
+            
+            conversational_rag_chain = RunnableWithMessageHistory(
+                rag_chain,
+                SessionService.get_chat_history,
+                input_messages_key="input",
+                history_messages_key="chat_history",
+                output_messages_key="answer",
+            )
+            
+            result = conversational_rag_chain.invoke(
+                {"input": query},
+                config={"configurable": {"session_id": "default_session"}}
+            )
+            
+            answer = result.get("answer", "").strip()
+            
+            return AnswerWithCitations(
+                answer=answer,
+                citations=citations,
+                mode="RAG"
+            )
+        
+        except Exception as e:
+            logger.exception("RAG with citations failed")
+            return AnswerWithCitations(
+                answer=f"Error generating response: {str(e)}",
+                citations=[],
+                mode="RAG"
+            )
 
     @staticmethod
     def _error(code: int, msg: str):

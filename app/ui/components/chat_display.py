@@ -1,5 +1,6 @@
 import streamlit as st
 from app.services.session_service import SessionService
+from app.models.citation import Citation
 
 def render_chat_header():
     st.title("💬 Vietnamese RAG Assistant")
@@ -23,6 +24,11 @@ def render_chat_messages():
             _render_welcome_message()
         else:
             _render_message_history(messages)
+        
+        # Trigger rerun if message was sent
+        if st.session_state.get("message_sent", False):
+            st.session_state.message_sent = False
+            st.rerun()
 
 
 def _render_welcome_message():
@@ -55,13 +61,21 @@ def _render_message_history(messages):
             continue
 
         if role == "assistant":
-            mode, _ = _extract_mode_content(message)
+            # Kiểm tra xem có mode mới không (citations structure)
+            mode = message.get("mode")
+            
+            # Fallback để tương thích với cấu trúc cũ
+            if not mode:
+                mode, _ = _extract_mode_content(message)
 
             if mode in ("RAG", "Co-RAG") and index + 1 < len(messages):
                 next_message = messages[index + 1]
                 if next_message.get("role") == "assistant":
-                    next_mode, _ = _extract_mode_content(next_message)
-                    if {mode, next_mode} == {"RAG", "Co-RAG"}:
+                    next_mode = next_message.get("mode")
+                    if not next_mode:
+                        next_mode, _ = _extract_mode_content(next_message)
+                    
+                    if next_mode and {mode, next_mode} == {"RAG", "Co-RAG"}:
                         if mode == "RAG":
                             _render_comparison_pair(message, next_message)
                         else:
@@ -96,14 +110,12 @@ def _render_user_message(message):
 
 
 def _render_assistant_message(message):
-    """Render an assistant message bubble."""
-    mode, content = _extract_mode_content(message)
-    assistant_label = "🤖 Assistant"
-
-    if mode == "RAG":
-        assistant_label = "🤖 RAG"
-    elif mode == "Co-RAG":
-        assistant_label = "🤖 Co-RAG"
+    """Render an assistant message bubble with citations."""
+    mode = message.get("mode", "Assistant")
+    content = message.get("content", "")
+    citations = message.get("citations", [])
+    
+    assistant_label = f"🤖 {mode}"
 
     st.markdown(
         f"""<div class="message-container">
@@ -119,10 +131,18 @@ def _render_assistant_message(message):
         </div>""",
         unsafe_allow_html=True
     )
+    
+    # Hiển thị citations nếu có
+    if citations and len(citations) > 0:
+        _render_citations(citations)
 
 
 def _extract_mode_content(message):
-    content = message["content"]
+    """Trích xuất mode từ content format cũ [MODE]\ncontent"""
+    content = message.get("content", "")
+    if not content:
+        return None, ""
+    
     if content.startswith("[RAG]\n"):
         return "RAG", content[len("[RAG]\n"):]
     if content.startswith("[Co-RAG]\n"):
@@ -130,11 +150,47 @@ def _extract_mode_content(message):
     return None, content
 
 
+def _render_citations(citations: list):
+    """Render citations/sources as expandable sections."""
+    if not citations:
+        return
+    
+    st.divider()
+    st.subheader("📚 Sources")
+    
+    for i, citation in enumerate(citations, 1):
+        # Tạo title cho expander
+        title = f"{i}. {citation.source_name}"
+        if citation.page_number:
+            title += f" (Page {citation.page_number})"
+        
+        with st.expander(title, expanded=False):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                if citation.page_number:
+                    st.caption(f"📖 **Page:** {citation.page_number}")
+                if citation.chunk_id:
+                    st.caption(f"🔖 **Chunk ID:** {citation.chunk_id}")
+                if citation.excerpt:
+                    st.caption("**Excerpt:**")
+                    st.markdown(f"> {citation.excerpt}...")
+            
+            with col2:
+                if citation.relevance_score > 0:
+                    st.metric("Relevance", f"{citation.relevance_score:.1%}")
+
+
+
+
+
 def _render_comparison_pair(rag_message, co_rag_message):
     rag_timestamp = rag_message.get("timestamp", "")
     co_rag_timestamp = co_rag_message.get("timestamp", "")
-    _, rag_content = _extract_mode_content(rag_message)
-    _, co_rag_content = _extract_mode_content(co_rag_message)
+    rag_content = rag_message.get("content", "")
+    co_rag_content = co_rag_message.get("content", "")
+    rag_citations = rag_message.get("citations", [])
+    co_rag_citations = co_rag_message.get("citations", [])
 
     st.markdown("<div class='compare-title'>RAG vs Co-RAG</div>", unsafe_allow_html=True)
     col_left, col_right = st.columns(2)
@@ -148,6 +204,14 @@ def _render_comparison_pair(rag_message, co_rag_message):
             </div>""",
             unsafe_allow_html=True
         )
+        if rag_citations:
+            with st.expander("📚 Sources (RAG)", expanded=False):
+                for i, citation in enumerate(rag_citations, 1):
+                    st.caption(f"{i}. {citation.source_name}")
+                    if citation.page_number:
+                        st.caption(f"   Page: {citation.page_number}")
+                    if citation.excerpt:
+                        st.caption(f"   > {citation.excerpt}...")
 
     with col_right:
         st.markdown(
@@ -158,3 +222,12 @@ def _render_comparison_pair(rag_message, co_rag_message):
             </div>""",
             unsafe_allow_html=True
         )
+        if co_rag_citations:
+            with st.expander("📚 Sources (Co-RAG)", expanded=False):
+                for i, citation in enumerate(co_rag_citations, 1):
+                    st.caption(f"{i}. {citation.source_name}")
+                    if citation.page_number:
+                        st.caption(f"   Page: {citation.page_number}")
+                    if citation.excerpt:
+                        st.caption(f"   > {citation.excerpt}...")
+

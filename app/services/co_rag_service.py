@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 from operator import itemgetter
 
 from langchain.chains.llm import LLMChain
@@ -17,6 +17,7 @@ from app.config import AIConfig, AppConfig
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.utils.logger import logger
+from app.models.citation import Citation, AnswerWithCitations
 
 
 class CoRAGService:
@@ -272,6 +273,89 @@ Sub-queries (one per line):
         except Exception as e:
             logger.exception("Co-RAG failed")
             return cls._error(500, str(e))
+
+    @classmethod
+    def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
+        """Get answer with Co-RAG and source citations"""
+        if not query.strip():
+            return AnswerWithCitations(
+                answer="Query is empty",
+                citations=[],
+                mode="Co-RAG"
+            )
+
+        vector_store = SessionService.get_vector_store()
+        if not vector_store:
+            return AnswerWithCitations(
+                answer="No documents uploaded yet",
+                citations=[],
+                mode="Co-RAG"
+            )
+
+        try:
+            retriever = vector_store.as_retriever(
+                search_kwargs={"k": AppConfig.CO_RAG_K_PER_SUBQUERY}
+            )
+
+            # 1. Tạo câu hỏi độc lập dựa trên lịch sử
+            contextualize_chain = cls._create_contextualize_chain()
+            chat_history_obj = SessionService.get_chat_history("default_session")
+            chat_history_messages = chat_history_obj.messages if hasattr(chat_history_obj, 'messages') else []
+            
+            standalone_question = contextualize_chain.invoke({
+                "question": query,
+                "chat_history": chat_history_messages
+            })
+
+            # 2. Tạo sub-queries
+            sub_queries = cls._generate_subqueries(standalone_question)
+
+            # 3. Thực hiện retrieval cho mỗi sub-query
+            merged_docs, per_query_docs = cls._retrieve_for_queries(retriever, sub_queries)
+
+            # 4. Tạo citations từ tất cả retrieved documents
+            citations_dict = {}  # Sử dụng dict để loại bỏ trùng lặp
+            for doc in merged_docs:
+                metadata = doc.metadata or {}
+                source_name = metadata.get('source', 'Unknown Document')
+                
+                # Tạo key duy nhất dựa trên source và chunk_id
+                citation_key = (source_name, metadata.get('chunk_id', None))
+                
+                if citation_key not in citations_dict:
+                    citation = Citation(
+                        source_name=source_name,
+                        page_number=metadata.get('page', None),
+                        chunk_id=metadata.get('chunk_id', None),
+                        relevance_score=metadata.get('score', 0.0),
+                        excerpt=doc.page_content[:200]
+                    )
+                    citations_dict[citation_key] = citation
+
+            citations = list(citations_dict.values())
+
+            # 5. Tạo context và synthesize answer
+            context = RAGService._format_docs(merged_docs)
+            synthesis_chain = cls._create_synthesis_chain()
+
+            answer = synthesis_chain.invoke({
+                "context": context,
+                "question": standalone_question
+            })
+
+            return AnswerWithCitations(
+                answer=answer.strip(),
+                citations=citations,
+                mode="Co-RAG"
+            )
+
+        except Exception as e:
+            logger.exception("Co-RAG with citations failed")
+            return AnswerWithCitations(
+                answer=f"Error generating response: {str(e)}",
+                citations=[],
+                mode="Co-RAG"
+            )
 
     @staticmethod
     def _error(code: int, msg: str) -> Dict[str, Any]:
