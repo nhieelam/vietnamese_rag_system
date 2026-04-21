@@ -50,3 +50,6 @@ pydantic
 loguru
 requests
 tqdm
+
+
+python-dotenv==1.0.1
