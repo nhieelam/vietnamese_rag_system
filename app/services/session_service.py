@@ -47,7 +47,7 @@ class SessionService:
         if "chunk_overlap" not in st.session_state:
             st.session_state.chunk_overlap = 50
         if "retrieval_k" not in st.session_state:
-            st.session_state.retrieval_k = 8
+            st.session_state.retrieval_k = 5
         if "per_source_k" not in st.session_state:
             st.session_state.per_source_k = 4
 
