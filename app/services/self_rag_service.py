@@ -65,6 +65,11 @@ class SelfRAGService:
             "Use ONLY the context below to answer the question. Each context block is "
             "prefixed with a marker like [1], [2]. When you use information from a "
             "block, append its marker inline, e.g. \"... theo quy định [2]\".\n"
+            "STRICT RULES for citation markers:\n"
+            "- Only use marker numbers that actually appear in the context below.\n"
+            "- Never invent a number. If unsure, omit the marker.\n"
+            "- Attach a marker ONLY to the exact block that contains the information.\n"
+            "- Do not reuse the same marker for information from a different block.\n"
             "If the context does not contain the answer, clearly say so.\n"
             "Answer in the same language as the question.\n\n"
             "Context:\n{context}\n\n"
@@ -332,11 +337,15 @@ class SelfRAGService:
                     except Exception:
                         logger.exception("Multi-hop refinement failed, keep hop-1 answer")
 
+            cleaned_answer, kept_citations = RAGService._sanitize_answer_citations(
+                (answer or "").strip(), citations
+            )
+
             # Cập nhật chat history
             try:
                 chat_history_obj = SessionService.get_chat_history("default_session")
                 chat_history_obj.add_user_message(query)
-                chat_history_obj.add_ai_message(answer)
+                chat_history_obj.add_ai_message(cleaned_answer)
             except Exception:
                 logger.exception("Failed to update chat history in Self-RAG")
 
@@ -344,8 +353,8 @@ class SelfRAGService:
             logger.info(f"[Self-RAG] done in {elapsed:.0f}ms, hops={hops}")
 
             return AnswerWithCitations(
-                answer=answer.strip(),
-                citations=citations,
+                answer=cleaned_answer,
+                citations=kept_citations,
                 mode="Self-RAG",
                 confidence=confidence,
                 rewritten_query=rewritten if rewritten != query else None,

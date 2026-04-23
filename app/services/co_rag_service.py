@@ -392,12 +392,16 @@ Sub-queries (one per line):
                 "question": standalone_question,
             })
 
+            cleaned_answer, kept_citations = RAGService._sanitize_answer_citations(
+                (answer or "").strip(), citations
+            )
+
             chat_history_obj.add_user_message(query)
-            chat_history_obj.add_ai_message(answer)
+            chat_history_obj.add_ai_message(cleaned_answer)
 
             return AnswerWithCitations(
-                answer=(answer or "").strip(),
-                citations=citations,
+                answer=cleaned_answer,
+                citations=kept_citations,
                 mode="Co-RAG",
             )
         except Exception as e:
@@ -414,6 +418,13 @@ Sub-queries (one per line):
         You are a helpful AI assistant. Use ONLY the context below.
         Each context block is prefixed with a marker like [1], [2]. When you use
         information from a block, append its marker inline, e.g. "... theo quy định [2]".
+
+        STRICT RULES for citation markers:
+        - Only use marker numbers that actually appear in the context below.
+        - Never invent a number. If unsure, omit the marker.
+        - Attach a marker ONLY to the exact block that contains the information.
+        - Do not reuse the same marker for information from a different block.
+
         If the answer is not in the context, clearly say so.
         Answer in the same language as the question.
 

@@ -51,7 +51,13 @@ class RAGService:
             "Use ONLY the following pieces of retrieved context to answer "
             "the question. Each context block is prefixed with a marker like [1], [2]. "
             "When you use information from a block, append its marker inline, e.g. "
-            "\"... theo quy định [2]\". If the answer is not in the context, say you don't know. "
+            "\"... theo quy định [2]\". "
+            "STRICT RULES for citation markers:\n"
+            "- Only use marker numbers that actually appear in the context below.\n"
+            "- Never invent a number. If unsure, omit the marker.\n"
+            "- Attach a marker ONLY to the exact block that contains the information.\n"
+            "- Do not reuse the same marker for information from a different block.\n"
+            "If the answer is not in the context, say you don't know. "
             "Answer in the same language as the question."
             "\n\n"
             "{context}"
@@ -198,6 +204,55 @@ class RAGService:
         return citations
 
     @staticmethod
+    def _sanitize_answer_citations(
+        answer: str, citations: List[Citation]
+    ) -> Tuple[str, List[Citation]]:
+        """Loại marker [n] không hợp lệ, chỉ giữ citations được tham chiếu,
+        đánh số lại liên tục theo thứ tự xuất hiện trong answer."""
+        if not answer or not citations:
+            return answer or "", []
+
+        valid_indices = {c.ref_index for c in citations if c.ref_index is not None}
+        # Bỏ marker trỏ đến số không tồn tại (vd LLM bịa [7] nhưng chỉ có 5 nguồn)
+        def _strip_invalid(m: "re.Match") -> str:
+            try:
+                n = int(m.group(1))
+            except ValueError:
+                return ""
+            return m.group(0) if n in valid_indices else ""
+
+        cleaned = re.sub(r"\[(\d+)\]", _strip_invalid, answer)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+
+        used_order: List[int] = []
+        for m in re.finditer(r"\[(\d+)\]", cleaned):
+            n = int(m.group(1))
+            if n in valid_indices and n not in used_order:
+                used_order.append(n)
+
+        if not used_order:
+            # LLM không dùng marker nào hợp lệ → giữ toàn bộ citations, không đổi số
+            return cleaned, citations
+
+        remap = {old: new for new, old in enumerate(used_order, start=1)}
+        cleaned = re.sub(
+            r"\[(\d+)\]",
+            lambda m: f"[{remap[int(m.group(1))]}]" if int(m.group(1)) in remap else "",
+            cleaned,
+        )
+
+        by_old = {c.ref_index: c for c in citations}
+        kept: List[Citation] = []
+        for old in used_order:
+            c = by_old.get(old)
+            if c is None:
+                continue
+            c.ref_index = remap[old]
+            kept.append(c)
+        return cleaned.strip(), kept
+
+    @staticmethod
     def _build_indexed_context(citations: List[Citation]) -> List[Document]:
         """Gắn prefix [n] vào page_content để LLM có thể trích dẫn inline."""
         docs: List[Document] = []
@@ -318,13 +373,17 @@ class RAGService:
                 "context": indexed_docs,
             })
 
+            cleaned_answer, kept_citations = cls._sanitize_answer_citations(
+                (answer or "").strip(), citations
+            )
+
             # 4. Cập nhật lịch sử hội thoại
             chat_history_obj.add_user_message(query)
-            chat_history_obj.add_ai_message(answer)
+            chat_history_obj.add_ai_message(cleaned_answer)
 
             return AnswerWithCitations(
-                answer=(answer or "").strip(),
-                citations=citations,
+                answer=cleaned_answer,
+                citations=kept_citations,
                 mode="RAG",
             )
         except Exception as e:
