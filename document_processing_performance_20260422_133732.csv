@@ -1,0 +1,2 @@
+pdf_path,file_size_mb,num_chunks,chunk_size,chunk_overlap,load_time,embedding_time,retrieval_vector_avg,retrieval_vector_min,retrieval_vector_max,retrieval_rag_avg,retrieval_rag_min,retrieval_rag_max,retrieval_co_rag_avg,retrieval_co_rag_min,retrieval_co_rag_max,retrieval_k,use_co_rag,error,label
+dao.pdf,0.13835430145263672,6,500,50,0.26647496223449707,14.23353624343872,0.060761213302612305,0.055997610092163086,0.06630587577819824,0.0,0.0,0.0,0.0,0.0,0.0,5,False,,Nhỏ (2 trang)

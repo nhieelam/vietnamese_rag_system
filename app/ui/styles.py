@@ -91,5 +91,32 @@ def apply_custom_styles():
         hr {
             margin: 1rem 0;
         }
+
+        /* Inline citation badge in answers */
+        .cite-badge {
+            display: inline-block;
+            background: #fff3bf;
+            color: #8a6d00;
+            border: 1px solid #f1c40f;
+            border-radius: 8px;
+            padding: 0 6px;
+            margin: 0 2px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+
+        /* Full chunk block inside citation expander */
+        .cite-chunk {
+            background: #fff8c6;
+            border-left: 4px solid #f1c40f;
+            padding: 10px 12px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            color: #2f2f2f;
+            max-height: 320px;
+            overflow-y: auto;
+        }
         </style>
     """, unsafe_allow_html=True)

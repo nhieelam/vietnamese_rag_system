@@ -12,9 +12,100 @@ def render_sidebar():
     with st.sidebar:
         _render_answer_mode_section()
         st.divider()
+        _render_retrieval_settings()
+        st.divider()
         _render_upload_section()
         st.divider()
         _render_document_list()
+
+
+def _render_retrieval_settings():
+    st.subheader("Chunk & Retrieval")
+
+    # Snapshot các giá trị đã ĐƯỢC ÁP DỤNG vào index hiện tại.
+    # Slider dùng key để Streamlit tự đồng bộ (không cần gán tay).
+    if "chunk_size_applied" not in st.session_state:
+        st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
+    if "chunk_overlap_applied" not in st.session_state:
+        st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
+
+    with st.expander("Advanced settings", expanded=False):
+        st.slider(
+            "Chunk size (characters)",
+            min_value=100, max_value=2000, step=50,
+            key="chunk_size",
+            help="Độ dài mỗi chunk khi chia nhỏ tài liệu.",
+        )
+        chunk_size = int(st.session_state.chunk_size)
+
+        max_overlap = max(0, chunk_size - 50)
+        # Clamp overlap về max_overlap nếu user vừa giảm chunk_size.
+        if int(st.session_state.get("chunk_overlap", 50)) > max_overlap:
+            st.session_state.chunk_overlap = max_overlap
+        st.slider(
+            "Chunk overlap",
+            min_value=0, max_value=max_overlap, step=10,
+            key="chunk_overlap",
+            help="Độ chồng lấn giữa 2 chunk liên tiếp. Nên < chunk_size / 3.",
+        )
+
+        st.slider(
+            "Top-K chunks khi retrieval",
+            min_value=2, max_value=20, step=1,
+            key="retrieval_k",
+            help="Số chunk được lấy cho mỗi câu hỏi.",
+        )
+        retrieval_k = int(st.session_state.retrieval_k)
+
+        if int(st.session_state.get("per_source_k", 4)) > retrieval_k:
+            st.session_state.per_source_k = retrieval_k
+        st.slider(
+            "Max chunks mỗi file",
+            min_value=1, max_value=max(1, retrieval_k), step=1,
+            key="per_source_k",
+            help="Giới hạn số chunk từ cùng một file để giữ đa nguồn.",
+        )
+
+        changed = (
+            int(st.session_state.chunk_size) != int(st.session_state.chunk_size_applied)
+            or int(st.session_state.chunk_overlap) != int(st.session_state.chunk_overlap_applied)
+        )
+        if changed and SessionService.get_documents():
+            st.warning("Chunk params đã đổi. Bấm Re-index để áp dụng cho tài liệu hiện tại.")
+            if st.button("Re-index all documents", use_container_width=True):
+                _reindex_all_documents()
+
+
+def _reindex_all_documents():
+    docs = SessionService.get_documents() or []
+    if not docs:
+        return
+    with st.spinner("Re-indexing..."):
+        try:
+            VectorStoreService.clear()
+            embedding = EmbeddingService.get_huggingface_embedding()
+            for doc in docs:
+                extracted = doc.get("text") or {}
+                text = extracted.get("text") if isinstance(extracted, dict) else None
+                if not text:
+                    continue
+                meta = (extracted.get("metadata") or {}) if isinstance(extracted, dict) else {}
+                page_ranges = meta.get("page_ranges")
+                if page_ranges:
+                    chunks = TextSplitterService.split_with_offsets(text, page_ranges)
+                else:
+                    chunks = TextSplitterService.split(text)
+                VectorStoreService.build_from_chunks(
+                    chunks=chunks,
+                    embedding=embedding,
+                    metadata={"source": doc.get("name"), "document_id": doc.get("id")},
+                )
+            st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
+            st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
+            st.success(f"Re-indexed {len(docs)} document(s) with new chunk params")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Re-index failed: {e}")
 
 
 def _render_answer_mode_section():
@@ -44,52 +135,93 @@ def _render_answer_mode_section():
 
 
 def _render_upload_section():
-    
-    uploaded_file = st.file_uploader(
-        "Choose a file (PDF, Image, DOCX)",
+    uploaded_files = st.file_uploader(
+        "Choose files (PDF, Image, DOCX)",
         type=AppConfig.ALLOWED_FILE_TYPES,
         help=f"Upload internal departmental documents (up to {AppConfig.MAX_FILE_SIZE_MB} pages)",
-        key="file_uploader"
+        key="file_uploader",
+        accept_multiple_files=True,
     )
-    
-    if uploaded_file:
-        if st.button("Process & Add", type="primary", use_container_width=True):
-            _process_and_add_document(uploaded_file)
+
+    if uploaded_files:
+        label = (
+            f"Process & Add ({len(uploaded_files)} files)"
+            if len(uploaded_files) > 1 else "Process & Add"
+        )
+        if st.button(label, type="primary", use_container_width=True):
+            _process_and_add_documents(uploaded_files)
 
 
-def _process_and_add_document(uploaded_file):
-    with st.spinner("Processing document..."):
+def _process_and_add_documents(uploaded_files):
+    added, skipped, failed = [], [], []
+    embedding = EmbeddingService.get_huggingface_embedding()
+
+    progress = st.progress(0.0, text="Starting...")
+    total = len(uploaded_files)
+
+    for i, uf in enumerate(uploaded_files, start=1):
+        progress.progress((i - 1) / total, text=f"Processing {uf.name} ({i}/{total})")
         try:
-            extracted_text = FileService.extract(uploaded_file)
-            
-            if SessionService.document_exists(uploaded_file.name):
-                st.warning("Document already uploaded!")
+            if SessionService.document_exists(uf.name):
+                skipped.append(uf.name)
+                continue
+
+            try:
+                uf.seek(0)
+            except Exception:
+                pass
+            extracted = FileService.extract(uf)
+            if extracted.get("status_code") != 200 or not extracted.get("text"):
+                failed.append((uf.name, extracted.get("message", "extract failed")))
+                continue
+
+            doc_id = len(SessionService.get_documents())
+            text = extracted["text"]
+            meta = extracted.get("metadata", {}) or {}
+            page_ranges = meta.get("page_ranges")
+            pdf_bytes = meta.get("pdf_bytes")
+
+            SessionService.add_document({
+                "id": doc_id,
+                "name": uf.name,
+                "text": extracted,
+                "size": len(text),
+                "uploaded_at": datetime.now().strftime(AppConfig.UPLOAD_TIMESTAMP_FORMAT),
+                "has_pdf": bool(pdf_bytes),
+                "total_pages": meta.get("total_pages"),
+            })
+
+            if pdf_bytes:
+                SessionService.store_pdf(doc_id, uf.name, pdf_bytes)
+
+            if page_ranges:
+                chunks = TextSplitterService.split_with_offsets(text, page_ranges)
             else:
-                doc_data = {
-                    "id": len(SessionService.get_documents()),
-                    "name": uploaded_file.name,
-                    "text": extracted_text,
-                    "size": len(extracted_text),
-                    "uploaded_at": datetime.now().strftime(AppConfig.UPLOAD_TIMESTAMP_FORMAT)
-                }
-                SessionService.add_document(doc_data)
-                chunks = TextSplitterService.split(doc_data["text"]["text"])
-                
-                # Truyền metadata để tracking source document
-                metadata = {
-                    "source": uploaded_file.name,
-                    "document_id": doc_data["id"]
-                }
-                
-                VectorStoreService.build_from_chunks(
-                    chunks=chunks,
-                    embedding=EmbeddingService.get_huggingface_embedding(),
-                    metadata=metadata
-                )
-                st.success(f"✅ Added: {uploaded_file.name}")
-                st.rerun()
+                chunks = TextSplitterService.split(text)
+
+            VectorStoreService.build_from_chunks(
+                chunks=chunks,
+                embedding=embedding,
+                metadata={"source": uf.name, "document_id": doc_id},
+            )
+            added.append(uf.name)
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            failed.append((uf.name, str(e)))
+
+    progress.progress(1.0, text="Done")
+
+    if added:
+        st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
+        st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
+        st.success(f"Added {len(added)} file(s): " + ", ".join(added))
+    if skipped:
+        st.warning("Already uploaded: " + ", ".join(skipped))
+    if failed:
+        for name, msg in failed:
+            st.error(f"{name}: {msg}")
+
+    if added:
+        st.rerun()
 
 
 def _render_document_list():
@@ -104,8 +236,11 @@ def _render_document_list():
             with st.expander(f"{doc['name']}", expanded=False):
                 st.caption(f"Uploaded: {doc['uploaded_at']}")
                 st.caption(f"Size: {doc['size']:,} characters")
-                
+                if doc.get("total_pages"):
+                    st.caption(f"Pages: {doc['total_pages']}")
+
                 if st.button("Remove", key=f"del_{idx}", use_container_width=True):
+                    SessionService.remove_pdf(doc.get("id", idx))
                     SessionService.remove_document(idx)
                     st.rerun()
         

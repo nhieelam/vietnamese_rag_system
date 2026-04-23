@@ -1,6 +1,6 @@
 import pdfplumber
 from PIL import Image
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple
 import tempfile
 import os
 from app.utils.logger import logger
@@ -67,6 +67,11 @@ class FileService:
     @classmethod
     def _process_doc(cls, file) -> Dict[str, Any]:
         try:
+            try:
+                if hasattr(file, "seek"):
+                    file.seek(0)
+            except Exception:
+                pass
             document = docx.Document(file)
             text_content = "\n".join([para.text for para in document.paragraphs])
             
@@ -88,68 +93,123 @@ class FileService:
 
     @classmethod
     def _process_pdf(cls, file) -> Dict[str, Any]:
-        text_content = ""
         empty_pages = []
         ocr_pages = []
         temp_file_path = None
+        pdf_bytes: Optional[bytes] = None
 
         try:
-            # Handle both file path and file-like objects (e.g., Streamlit UploadedFile)
             if hasattr(file, 'path') and os.path.isfile(file.path):
                 file_to_open = file.path
+                try:
+                    with open(file_to_open, "rb") as fh:
+                        pdf_bytes = fh.read()
+                except Exception:
+                    pdf_bytes = None
             elif hasattr(file, 'read'):
-                # File-like object: save to temporary file
+                # Streamlit UploadedFile: dùng getvalue() để lấy bytes đầy đủ
+                # mà không phụ thuộc vị trí con trỏ, seek(0) trước đọc để an toàn.
+                raw: Optional[bytes] = None
+                if hasattr(file, "getvalue"):
+                    try:
+                        raw = file.getvalue()
+                    except Exception:
+                        raw = None
+                if not raw:
+                    try:
+                        file.seek(0)
+                    except Exception:
+                        pass
+                    raw = file.read() or b""
+                try:
+                    file.seek(0)
+                except Exception:
+                    pass
+
+                if not raw:
+                    return cls._error(422, "Uploaded file is empty or cannot be read")
+
+                pdf_bytes = raw
                 with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-                    tmp.write(file.read())
+                    tmp.write(raw)
                     temp_file_path = tmp.name
                 file_to_open = temp_file_path
                 logger.debug(f"Created temporary PDF file: {temp_file_path}")
             else:
                 file_to_open = str(file)
+                try:
+                    with open(file_to_open, "rb") as fh:
+                        pdf_bytes = fh.read()
+                except Exception:
+                    pdf_bytes = None
+
+            page_ranges: list = []
+            text_parts: list = []
+            cursor = 0
 
             with pdfplumber.open(file_to_open) as pdf:
                 total_pages = len(pdf.pages)
                 logger.info(f"PDF contains {total_pages} page(s)")
                 if total_pages == 0:
-                    logger.info("PDF file is empty (0 pages)")
-                    return cls._error(
-                        400,
-                        "PDF file is empty (0 pages)",
-                        total_pages=0
-                    )
-                
+                    return cls._error(400, "PDF file is empty (0 pages)", total_pages=0)
+
                 for i, page in enumerate(pdf.pages):
+                    page_num = i + 1
                     try:
-                        page_text = page.extract_text()
-                        if page_text and page_text.strip():
-                            text_content += page_text + "\n"
-                        else:
-                            empty_pages.append(i + 1)
+                        page_text = page.extract_text() or ""
                     except Exception:
                         logger.exception("Error extracting text from PDF page")
-                        empty_pages.append(i + 1)
+                        page_text = ""
 
-                # If no text extracted, try OCR on scanned pages
+                    if not page_text.strip():
+                        empty_pages.append(page_num)
+                        continue
+
+                    piece = page_text + "\n"
+                    start = cursor
+                    end = cursor + len(piece)
+                    page_ranges.append({
+                        "page": page_num,
+                        "start": start,
+                        "end": end,
+                    })
+                    text_parts.append(piece)
+                    cursor = end
+
+                text_content = "".join(text_parts)
+
                 if not text_content.strip() and len(empty_pages) > 0:
-                    logger.info(f"No text extracted from PDF. Attempting OCR on {len(empty_pages)} page(s)")
-                    text_content = cls._process_scanned_pdf(file_to_open, empty_pages)
-                    if text_content.strip():
-                        ocr_pages = empty_pages
-                        empty_pages = []
+                    logger.info(f"No text extracted. Attempting OCR on {len(empty_pages)} page(s)")
+                    ocr_pairs = cls._process_scanned_pdf_with_pages(file_to_open, empty_pages)
+                    if ocr_pairs:
+                        for page_num, page_text in ocr_pairs:
+                            piece = page_text + "\n"
+                            start = cursor
+                            end = cursor + len(piece)
+                            page_ranges.append({
+                                "page": page_num,
+                                "start": start,
+                                "end": end,
+                            })
+                            text_parts.append(piece)
+                            cursor = end
+                        text_content = "".join(text_parts)
+                        ocr_pages = [p for p, _ in ocr_pairs]
+                        empty_pages = [p for p in empty_pages if p not in ocr_pages]
                     else:
                         logger.warning("OCR also failed to extract text from PDF")
 
             if not text_content.strip():
-                logger.info("No text extracted from PDF. This may be a scanned document.")
                 return cls._error(
                     422,
                     "No text extracted from PDF. This may be a scanned document requiring OCR.",
                     total_pages=total_pages,
                     empty_pages=empty_pages
                 )
-            extracted = text_content.strip()
-            extracted_pages = total_pages - len(empty_pages)
-            
+
+            extracted = text_content
+            extracted_pages = len(page_ranges)
+
             logger.info(
                 f"PDF extraction complete: {len(extracted)} chars "
                 f"from {extracted_pages}/{total_pages} pages "
@@ -163,7 +223,9 @@ class FileService:
                 extracted_pages=extracted_pages,
                 empty_pages=empty_pages,
                 ocr_pages=ocr_pages,
-                character_count=len(extracted)
+                character_count=len(extracted),
+                page_ranges=page_ranges,
+                pdf_bytes=pdf_bytes,
             )
         except FileNotFoundError:
             return cls._error(404, "PDF file not found")
@@ -178,6 +240,39 @@ class FileService:
                     logger.debug(f"Cleaned up temporary file: {temp_file_path}")
                 except Exception as e:
                     logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+
+    @classmethod
+    def _process_scanned_pdf_with_pages(
+        cls, pdf_path, page_numbers=None
+    ) -> List[Tuple[int, str]]:
+        """OCR per page, trả về list (page_number, text) theo thứ tự trang."""
+        results: List[Tuple[int, str]] = []
+        try:
+            images = pdf_to_images(pdf_path, dpi=200)
+            if not images:
+                return results
+
+            if page_numbers:
+                targets = [(i, img) for i, img in enumerate(images, start=1) if i in page_numbers]
+            else:
+                targets = list(enumerate(images, start=1))
+
+            for page_num, image in targets:
+                try:
+                    ocr_vi = TesseractOCRWrapper(lang='vie')
+                    page_text = ocr_vi.read_image(image) or ""
+                    if not page_text.strip():
+                        ocr_en = TesseractOCRWrapper(lang='eng')
+                        page_text = ocr_en.read_image(image) or ""
+                    if page_text.strip():
+                        results.append((page_num, page_text))
+                except Exception as e:
+                    logger.warning(f"OCR failed for page {page_num}: {e}")
+                    continue
+            return results
+        except Exception:
+            logger.exception("Failed to OCR scanned PDF")
+            return results
 
     @classmethod
     def _process_scanned_pdf(cls, pdf_path, page_numbers=None) -> str:
@@ -247,8 +342,13 @@ class FileService:
     @classmethod
     def _process_image(cls, file) -> Dict[str, Any]:
         file_to_open = getattr(file, "path", file)
-        
+
         try:
+            try:
+                if hasattr(file_to_open, "seek"):
+                    file_to_open.seek(0)
+            except Exception:
+                pass
             image = Image.open(file_to_open)
             width, height = image.size
             logger.info(f"Processing image with size: {width}x{height}")

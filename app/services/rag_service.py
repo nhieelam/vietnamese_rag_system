@@ -1,7 +1,9 @@
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
@@ -9,6 +11,11 @@ from app.config import AIConfig
 from app.services.session_service import SessionService
 from app.utils.logger import logger
 from app.models.citation import Citation, AnswerWithCitations
+
+
+EXCERPT_LEN = 280
+DEFAULT_K = 5
+PER_SOURCE_K = 4
 
 
 class RAGService:
@@ -19,10 +26,6 @@ class RAGService:
 
     @classmethod
     def _create_history_aware_retriever(cls, retriever):
-        """
-        Creates a chain that rephrases the user's question based on chat history
-        to form a standalone question for document retrieval.
-        """
         contextualize_q_system_prompt = (
             "Given a chat history and the latest user question "
             "which might reference context in the chat history, "
@@ -43,16 +46,13 @@ class RAGService:
 
     @classmethod
     def _create_document_chain(cls):
-        """
-        Creates a chain that answers a question based on a given context
-        (retrieved documents) and chat history.
-        """
         qa_system_prompt = (
             "You are an assistant for question-answering tasks. "
-            "Use the following pieces of retrieved context to answer "
-            "the question. If you don't know the answer, just say "
-            "that you don't know. Use three sentences maximum and keep the "
-            "answer concise."
+            "Use ONLY the following pieces of retrieved context to answer "
+            "the question. Each context block is prefixed with a marker like [1], [2]. "
+            "When you use information from a block, append its marker inline, e.g. "
+            "\"... theo quy định [2]\". If the answer is not in the context, say you don't know. "
+            "Answer in the same language as the question."
             "\n\n"
             "{context}"
         )
@@ -69,118 +69,136 @@ class RAGService:
     def _format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
 
+    @staticmethod
+    def _score_docs(
+        vector_store,
+        query: str,
+        k: int = DEFAULT_K,
+        filter_source: Optional[str] = None,
+    ) -> List[Tuple[Document, float]]:
+        """Trả (doc, relevance 0..1). Nếu `filter_source` có, lọc chunk theo tên file."""
+        fetch_k = max(k * 5, 20) if filter_source else k
+        try:
+            pairs = vector_store.similarity_search_with_score(query, k=fetch_k)
+        except Exception:
+            logger.exception("similarity_search_with_score failed, fallback")
+            docs = vector_store.similarity_search(query, k=fetch_k)
+            pairs = [(d, 0.0) for d in docs]
+
+        results: List[Tuple[Document, float]] = []
+        for doc, dist in pairs:
+            if filter_source and (doc.metadata or {}).get("source") != filter_source:
+                continue
+            try:
+                rel = 1.0 / (1.0 + float(dist))
+            except Exception:
+                rel = 0.0
+            results.append((doc, rel))
+            if len(results) >= k:
+                break
+        return results
+
+    @staticmethod
+    def _detect_target_sources(query: str) -> List[str]:
+        """Phát hiện tên file người dùng nhắc trong câu hỏi."""
+        docs = SessionService.get_documents() or []
+        names = [d.get("name") for d in docs if d.get("name")]
+        if not names:
+            return []
+        q_low = query.lower()
+        hits: List[str] = []
+        for name in names:
+            if not name:
+                continue
+            n_low = name.lower()
+            stem = re.sub(r"\.[^.]+$", "", n_low)  # bỏ extension
+            if n_low in q_low or (stem and re.search(rf"\b{re.escape(stem)}\b", q_low)):
+                hits.append(name)
+        return hits
+
+    @staticmethod
+    def _diversify_by_source(
+        scored: List[Tuple[Document, float]],
+        per_source: int = PER_SOURCE_K,
+    ) -> List[Tuple[Document, float]]:
+        """Giới hạn số chunk mỗi file để nhiều nguồn cùng xuất hiện."""
+        counts: Dict[str, int] = {}
+        out: List[Tuple[Document, float]] = []
+        for doc, score in scored:
+            src = (doc.metadata or {}).get("source", "?")
+            if counts.get(src, 0) >= per_source:
+                continue
+            counts[src] = counts.get(src, 0) + 1
+            out.append((doc, score))
+        return out
+
+    @staticmethod
+    def _docs_to_citations(scored_docs: List[Tuple[Document, float]]) -> List[Citation]:
+        citations: List[Citation] = []
+        seen = set()
+        for idx, (doc, score) in enumerate(scored_docs, start=1):
+            meta = doc.metadata or {}
+            key = (
+                meta.get("source"),
+                meta.get("document_id"),
+                meta.get("chunk_id"),
+                meta.get("char_start"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+
+            excerpt = doc.page_content.strip().replace("\n", " ")
+            if len(excerpt) > EXCERPT_LEN:
+                excerpt = excerpt[:EXCERPT_LEN].rstrip() + "…"
+
+            citations.append(Citation(
+                source_name=meta.get("source", "Unknown Document"),
+                document_id=meta.get("document_id"),
+                page_number=meta.get("page"),
+                char_start=meta.get("char_start"),
+                char_end=meta.get("char_end"),
+                chunk_id=meta.get("chunk_id"),
+                relevance_score=float(score or 0.0),
+                excerpt=excerpt,
+                full_text=doc.page_content,
+                ref_index=len(citations) + 1,
+            ))
+        return citations
+
+    @staticmethod
+    def _build_indexed_context(citations: List[Citation]) -> List[Document]:
+        """Gắn prefix [n] vào page_content để LLM có thể trích dẫn inline."""
+        docs: List[Document] = []
+        for c in citations:
+            header = f"[{c.ref_index}] Source: {c.source_name}"
+            if c.page_number is not None:
+                header += f" · page {c.page_number}"
+            text = f"{header}\n{c.full_text}"
+            docs.append(Document(page_content=text, metadata={
+                "ref_index": c.ref_index,
+                "source": c.source_name,
+                "page": c.page_number,
+                "chunk_id": c.chunk_id,
+                "document_id": c.document_id,
+            }))
+        return docs
+
     @classmethod
     def get_answer(cls, query: str) -> Dict[str, Any]:
         if not query.strip():
             return cls._error(400, "Query is empty")
 
         vector_store = SessionService.get_vector_store()
-
         if not vector_store:
             return cls._error(400, "No documents uploaded yet")
 
         try:
             retriever = vector_store.as_retriever(search_kwargs={"k": 10})
-
-            # 1. Create a history-aware retriever
             history_aware_retriever = cls._create_history_aware_retriever(retriever)
-
-            # 2. Create the main document chain for answering
             question_answer_chain = cls._create_document_chain()
-
-            # 3. Combine them into the final retrieval chain
             rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
-            # 4. Wrap the chain to manage history automatically
-            conversational_rag_chain = RunnableWithMessageHistory(
-                rag_chain,
-                SessionService.get_chat_history,  # Use the correct history method
-                input_messages_key="input",
-                history_messages_key="chat_history",
-                output_messages_key="answer",
-            )
-
-            # 5. Invoke the chain with the user's query
-            result = conversational_rag_chain.invoke(
-                {"input": query},
-                config={"configurable": {"session_id": "default_session"}}
-            )
-            
-            answer = result.get("answer", "")
-            retrieved_docs = result.get("context", [])
-
-            return {
-                "status_code": 200,
-                "answer": answer.strip(),
-                "message": "OK",
-                "metadata": {
-                    "retrieved_docs_count": len(retrieved_docs)
-                },
-            }
-
-        except Exception as e:
-            logger.exception("RAG failed")
-            return cls._error(500, str(e))
-
-    @classmethod
-    def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
-        """Get answer with source citations"""
-        if not query.strip():
-            return AnswerWithCitations(
-                answer="Query is empty",
-                citations=[],
-                mode="RAG"
-            )
-
-        vector_store = SessionService.get_vector_store()
-
-        if not vector_store:
-            return AnswerWithCitations(
-                answer="No documents uploaded yet",
-                citations=[],
-                mode="RAG"
-            )
-
-        try:
-            # Tìm kiếm documents liên quan
-            retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-            history_aware_retriever = cls._create_history_aware_retriever(retriever)
-            
-            # Lấy chat history từ session
-            chat_history_obj = SessionService.get_chat_history("default_session")
-            chat_history_messages = chat_history_obj.messages if hasattr(chat_history_obj, 'messages') else []
-            
-            # Lấy retrieved documents
-            retrieved_docs = history_aware_retriever.invoke(
-                {
-                    "input": query,
-                    "chat_history": chat_history_messages
-                }
-            )
-            
-            # Tạo citations từ retrieved documents
-            citations = []
-            for doc in retrieved_docs:
-                metadata = doc.metadata or {}
-                source_name = metadata.get('source', 'Unknown Document')
-                
-                citation = Citation(
-                    source_name=source_name,
-                    page_number=metadata.get('page', None),
-                    chunk_id=metadata.get('chunk_id', None),
-                    relevance_score=metadata.get('score', 0.0),
-                    excerpt=doc.page_content[:200]  # Lấy 200 ký tự đầu
-                )
-                citations.append(citation)
-            
-            # Tạo prompt kèm context từ retrieved documents
-            question_answer_chain = cls._create_document_chain()
-            
-            rag_chain = create_retrieval_chain(
-                history_aware_retriever,
-                question_answer_chain
-            )
-            
             conversational_rag_chain = RunnableWithMessageHistory(
                 rag_chain,
                 SessionService.get_chat_history,
@@ -188,26 +206,89 @@ class RAGService:
                 history_messages_key="chat_history",
                 output_messages_key="answer",
             )
-            
+
             result = conversational_rag_chain.invoke(
                 {"input": query},
-                config={"configurable": {"session_id": "default_session"}}
+                config={"configurable": {"session_id": "default_session"}},
             )
-            
-            answer = result.get("answer", "").strip()
-            
+            answer = result.get("answer", "")
+            retrieved_docs = result.get("context", [])
+            return {
+                "status_code": 200,
+                "answer": answer.strip(),
+                "message": "OK",
+                "metadata": {"retrieved_docs_count": len(retrieved_docs)},
+            }
+        except Exception as e:
+            logger.exception("RAG failed")
+            return cls._error(500, str(e))
+
+    @classmethod
+    def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
+        if not query.strip():
+            return AnswerWithCitations(answer="Query is empty", citations=[], mode="RAG")
+
+        vector_store = SessionService.get_vector_store()
+        if not vector_store:
             return AnswerWithCitations(
-                answer=answer,
-                citations=citations,
-                mode="RAG"
+                answer="No documents uploaded yet", citations=[], mode="RAG"
             )
-        
+
+        try:
+            chat_history_obj = SessionService.get_chat_history("default_session")
+            chat_history_messages = getattr(chat_history_obj, "messages", []) or []
+
+            rephrased_query = query
+
+            rp = SessionService.get_retrieval_params()
+            k = rp["k"]
+            per_source = rp["per_source_k"]
+
+            # Phát hiện câu hỏi nhắc đích danh tên file → lọc theo source
+            target_sources = cls._detect_target_sources(rephrased_query)
+            if target_sources:
+                logger.info(f"Detected target sources in query: {target_sources}")
+                scored: List[Tuple[Document, float]] = []
+                for src in target_sources:
+                    scored.extend(
+                        cls._score_docs(
+                            vector_store,
+                            rephrased_query,
+                            k=per_source,
+                            filter_source=src,
+                        )
+                    )
+                scored.sort(key=lambda x: x[1], reverse=True)
+            else:
+                scored = cls._score_docs(vector_store, rephrased_query, k=k)
+                scored = cls._diversify_by_source(scored, per_source=per_source)
+
+            citations = cls._docs_to_citations(scored)
+
+            # 3. Gọi LLM với context đã đánh số để trả lời có [n]
+            indexed_docs = cls._build_indexed_context(citations)
+            qa_chain = cls._create_document_chain()
+            answer = qa_chain.invoke({
+                "input": query,
+                "chat_history": chat_history_messages,
+                "context": indexed_docs,
+            })
+
+            # 4. Cập nhật lịch sử hội thoại
+            chat_history_obj.add_user_message(query)
+            chat_history_obj.add_ai_message(answer)
+
+            return AnswerWithCitations(
+                answer=(answer or "").strip(),
+                citations=citations,
+                mode="RAG",
+            )
         except Exception as e:
             logger.exception("RAG with citations failed")
             return AnswerWithCitations(
                 answer=f"Error generating response: {str(e)}",
                 citations=[],
-                mode="RAG"
+                mode="RAG",
             )
 
     @staticmethod
