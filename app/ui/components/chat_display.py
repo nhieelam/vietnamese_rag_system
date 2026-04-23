@@ -108,10 +108,24 @@ def _render_assistant_message(message, msg_index: int):
 
     rendered_content = _render_inline_refs(content, len(citations))
 
+    header_extra = ""
+    confidence = message.get("confidence")
+    if confidence is not None:
+        try:
+            pct = int(round(float(confidence) * 100))
+            color = "#16a34a" if pct >= 70 else ("#d97706" if pct >= 40 else "#dc2626")
+            header_extra = (
+                f'<span style="margin-left:8px;padding:2px 8px;border-radius:10px;'
+                f'background:{color};color:white;font-size:0.7rem;">'
+                f'Confidence: {pct}%</span>'
+            )
+        except Exception:
+            pass
+
     st.markdown(
         f"""<div class="message-container">
         <div style="text-align: left; margin-bottom: 4px;">
-            <small style="color: #666;">{mode}</small>
+            <small style="color: #666;">{mode}</small>{header_extra}
         </div>
         <div class="assistant-message">{rendered_content}</div>
         <div style="text-align: left; margin-top: 2px;">
@@ -121,8 +135,34 @@ def _render_assistant_message(message, msg_index: int):
         unsafe_allow_html=True,
     )
 
+    _render_self_rag_meta(message)
+
     if citations:
         _render_citations(citations, f"{mode}-{msg_index}")
+
+
+def _render_self_rag_meta(message):
+    """Hiển thị rewritten query + grounded/completeness cho Self-RAG."""
+    rewritten = message.get("rewritten_query")
+    grounded = message.get("grounded_score")
+    completeness = message.get("completeness_score")
+    hops = message.get("hops")
+
+    if not any(v is not None for v in [rewritten, grounded, completeness, hops]):
+        return
+
+    with st.expander("Self-RAG details", expanded=False):
+        if rewritten:
+            st.markdown(f"**Rewritten query:** {rewritten}")
+        bits = []
+        if grounded is not None:
+            bits.append(f"Grounded: {float(grounded):.2f}")
+        if completeness is not None:
+            bits.append(f"Completeness: {float(completeness):.2f}")
+        if hops is not None:
+            bits.append(f"Hops: {hops}")
+        if bits:
+            st.caption(" · ".join(bits))
 
 
 def _extract_mode_content(message):

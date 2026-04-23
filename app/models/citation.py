@@ -54,6 +54,11 @@ class AnswerWithCitations:
     answer: str
     citations: List[Citation] = field(default_factory=list)
     mode: str = "RAG"
+    confidence: Optional[float] = None           # 0..1 - Self-RAG self-evaluation
+    rewritten_query: Optional[str] = None        # Self-RAG query rewriting output
+    grounded_score: Optional[float] = None       # 0..1 - answer grounded in context
+    completeness_score: Optional[float] = None   # 0..1 - answer fully addresses question
+    hops: Optional[int] = None                   # số vòng multi-hop đã chạy
 
     def get_formatted_answer(self) -> str:
         formatted = f"{self.answer}\n\n"

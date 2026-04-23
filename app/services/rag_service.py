@@ -70,14 +70,45 @@ class RAGService:
         return "\n\n".join(doc.page_content for doc in docs)
 
     @staticmethod
+    def _metadata_filters() -> Tuple[List[str], List[str]]:
+        """Đọc filter từ session (doc names + file types)."""
+        try:
+            return (
+                SessionService.get_doc_filter(),
+                SessionService.get_file_type_filter(),
+            )
+        except Exception:
+            return [], []
+
+    @staticmethod
+    def _passes_filters(
+        doc: Document,
+        doc_filter: List[str],
+        type_filter: List[str],
+        filter_source: Optional[str] = None,
+    ) -> bool:
+        meta = doc.metadata or {}
+        src = meta.get("source")
+        if filter_source and src != filter_source:
+            return False
+        if doc_filter and src not in doc_filter:
+            return False
+        if type_filter and meta.get("file_type") not in type_filter:
+            return False
+        return True
+
+    @classmethod
     def _score_docs(
+        cls,
         vector_store,
         query: str,
         k: int = DEFAULT_K,
         filter_source: Optional[str] = None,
     ) -> List[Tuple[Document, float]]:
-        """Trả (doc, relevance 0..1). Nếu `filter_source` có, lọc chunk theo tên file."""
-        fetch_k = max(k * 5, 20) if filter_source else k
+        """Trả (doc, relevance 0..1). Lọc theo session filters + `filter_source`."""
+        doc_filter, type_filter = cls._metadata_filters()
+        need_overfetch = bool(filter_source or doc_filter or type_filter)
+        fetch_k = max(k * 5, 20) if need_overfetch else k
         try:
             pairs = vector_store.similarity_search_with_score(query, k=fetch_k)
         except Exception:
@@ -87,7 +118,7 @@ class RAGService:
 
         results: List[Tuple[Document, float]] = []
         for doc, dist in pairs:
-            if filter_source and (doc.metadata or {}).get("source") != filter_source:
+            if not cls._passes_filters(doc, doc_filter, type_filter, filter_source):
                 continue
             try:
                 rel = 1.0 / (1.0 + float(dist))
@@ -244,6 +275,11 @@ class RAGService:
             k = rp["k"]
             per_source = rp["per_source_k"]
 
+            retriever_mode = SessionService.get_retriever_mode()
+            use_reranker = SessionService.get_use_reranker()
+            # If reranker is on, fetch more candidates
+            fetch_k = max(k * 3, 15) if use_reranker else k
+
             # Phát hiện câu hỏi nhắc đích danh tên file → lọc theo source
             target_sources = cls._detect_target_sources(rephrased_query)
             if target_sources:
@@ -259,9 +295,17 @@ class RAGService:
                         )
                     )
                 scored.sort(key=lambda x: x[1], reverse=True)
-            else:
-                scored = cls._score_docs(vector_store, rephrased_query, k=k)
+            elif retriever_mode == "hybrid":
+                from app.services.hybrid_retriever_service import HybridRetrieverService
+                scored = HybridRetrieverService.retrieve(rephrased_query, k=fetch_k)
                 scored = cls._diversify_by_source(scored, per_source=per_source)
+            else:
+                scored = cls._score_docs(vector_store, rephrased_query, k=fetch_k)
+                scored = cls._diversify_by_source(scored, per_source=per_source)
+
+            if use_reranker and scored:
+                from app.services.reranker_service import RerankerService
+                scored = RerankerService.rerank(rephrased_query, scored, top_k=k)
 
             citations = cls._docs_to_citations(scored)
 

@@ -62,7 +62,11 @@ class VectorStoreService:
             vector_store = FAISS.from_documents(docs, embedding)
 
         SessionService.set_vector_store(vector_store)
-        logger.info("Vector store stored in session (RAM)")
+        SessionService.add_chunks(docs)
+        logger.info(
+            f"Vector store stored in session (RAM); "
+            f"total chunks in session: {len(SessionService.get_all_chunks())}"
+        )
         return vector_store
 
     @classmethod
@@ -72,4 +76,5 @@ class VectorStoreService:
     @classmethod
     def clear(cls):
         SessionService.clear_vector_store()
-        logger.info("Vector store cleared from session")
+        SessionService.clear_all_chunks()
+        logger.info("Vector store + chunks cleared from session")

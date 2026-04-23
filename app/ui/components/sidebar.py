@@ -1,4 +1,3 @@
-from unittest import result
 import streamlit as st
 from datetime import datetime
 from app.services import EmbeddingService
@@ -7,6 +6,7 @@ from app.services import SessionService
 from app.config import AppConfig
 from app.services import VectorStoreService
 from app.services import TextSplitterService
+
 
 def render_sidebar():
     with st.sidebar:
@@ -17,13 +17,17 @@ def render_sidebar():
         _render_upload_section()
         st.divider()
         _render_document_list()
+        st.divider()
+        _render_doc_filter_section()
+        st.divider()
+        _render_chat_history_section()
+        st.divider()
+        _render_danger_zone()
 
 
 def _render_retrieval_settings():
     st.subheader("Chunk & Retrieval")
 
-    # Snapshot các giá trị đã ĐƯỢC ÁP DỤNG vào index hiện tại.
-    # Slider dùng key để Streamlit tự đồng bộ (không cần gán tay).
     if "chunk_size_applied" not in st.session_state:
         st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
     if "chunk_overlap_applied" not in st.session_state:
@@ -39,7 +43,6 @@ def _render_retrieval_settings():
         chunk_size = int(st.session_state.chunk_size)
 
         max_overlap = max(0, chunk_size - 50)
-        # Clamp overlap về max_overlap nếu user vừa giảm chunk_size.
         if int(st.session_state.get("chunk_overlap", 50)) > max_overlap:
             st.session_state.chunk_overlap = max_overlap
         st.slider(
@@ -66,6 +69,28 @@ def _render_retrieval_settings():
             help="Giới hạn số chunk từ cùng một file để giữ đa nguồn.",
         )
 
+        st.markdown("---")
+        st.caption("**Retriever strategy**")
+        st.selectbox(
+            "Retriever mode",
+            options=["vector", "hybrid"],
+            key="retriever_mode",
+            help="vector = FAISS semantic only. hybrid = BM25 + vector ensemble.",
+        )
+        if st.session_state.get("retriever_mode") == "hybrid":
+            st.slider(
+                "BM25 weight",
+                min_value=0.0, max_value=1.0, step=0.1,
+                key="bm25_weight",
+                help="Trọng số BM25 (vector weight = 1 - BM25 weight).",
+            )
+
+        st.checkbox(
+            "Enable Cross-Encoder Re-ranking",
+            key="use_reranker",
+            help="Bật re-ranking với BAAI/bge-reranker-v2-m3 (chậm hơn, chất lượng cao hơn).",
+        )
+
         changed = (
             int(st.session_state.chunk_size) != int(st.session_state.chunk_size_applied)
             or int(st.session_state.chunk_overlap) != int(st.session_state.chunk_overlap_applied)
@@ -83,6 +108,7 @@ def _reindex_all_documents():
     with st.spinner("Re-indexing..."):
         try:
             VectorStoreService.clear()
+            SessionService.clear_all_chunks()
             embedding = EmbeddingService.get_huggingface_embedding()
             for doc in docs:
                 extracted = doc.get("text") or {}
@@ -98,7 +124,13 @@ def _reindex_all_documents():
                 VectorStoreService.build_from_chunks(
                     chunks=chunks,
                     embedding=embedding,
-                    metadata={"source": doc.get("name"), "document_id": doc.get("id")},
+                    metadata={
+                        "source": doc.get("name"),
+                        "document_id": doc.get("id"),
+                        "file_type": doc.get("file_type"),
+                        "uploaded_at": doc.get("uploaded_at"),
+                        "total_pages": doc.get("total_pages"),
+                    },
                 )
             st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
             st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
@@ -125,13 +157,25 @@ def _render_answer_mode_section():
     
     st.session_state.answer_mode = selected_mode
     
-    # Display mode description
     if selected_mode == AppConfig.ANSWER_MODE_RAG:
         st.info("📚 **RAG Only**: Fast responses using traditional retrieval-augmented generation")
     elif selected_mode == AppConfig.ANSWER_MODE_CO_RAG:
         st.info("🔀 **Co-RAG Only**: Generates multiple sub-queries for comprehensive retrieval")
+    elif selected_mode == AppConfig.ANSWER_MODE_SELF_RAG:
+        st.info("🧠 **Self-RAG**: Query rewriting, relevance grading, self-evaluation & confidence scoring")
     else:
         st.info("🤝 **RAG & Co-RAG**: Combines both approaches for the best results")
+
+
+def _detect_file_type(uploaded_file) -> str:
+    t = getattr(uploaded_file, "type", "") or ""
+    if "pdf" in t:
+        return "pdf"
+    if "word" in t or "docx" in t:
+        return "docx"
+    if "image" in t:
+        return "image"
+    return "unknown"
 
 
 def _render_upload_section():
@@ -180,13 +224,16 @@ def _process_and_add_documents(uploaded_files):
             meta = extracted.get("metadata", {}) or {}
             page_ranges = meta.get("page_ranges")
             pdf_bytes = meta.get("pdf_bytes")
+            file_type = _detect_file_type(uf)
+            uploaded_at = datetime.now().strftime(AppConfig.UPLOAD_TIMESTAMP_FORMAT)
 
             SessionService.add_document({
                 "id": doc_id,
                 "name": uf.name,
                 "text": extracted,
                 "size": len(text),
-                "uploaded_at": datetime.now().strftime(AppConfig.UPLOAD_TIMESTAMP_FORMAT),
+                "uploaded_at": uploaded_at,
+                "file_type": file_type,
                 "has_pdf": bool(pdf_bytes),
                 "total_pages": meta.get("total_pages"),
             })
@@ -202,7 +249,13 @@ def _process_and_add_documents(uploaded_files):
             VectorStoreService.build_from_chunks(
                 chunks=chunks,
                 embedding=embedding,
-                metadata={"source": uf.name, "document_id": doc_id},
+                metadata={
+                    "source": uf.name,
+                    "document_id": doc_id,
+                    "file_type": file_type,
+                    "uploaded_at": uploaded_at,
+                    "total_pages": meta.get("total_pages"),
+                },
             )
             added.append(uf.name)
         except Exception as e:
@@ -236,6 +289,8 @@ def _render_document_list():
             with st.expander(f"{doc['name']}", expanded=False):
                 st.caption(f"Uploaded: {doc['uploaded_at']}")
                 st.caption(f"Size: {doc['size']:,} characters")
+                if doc.get("file_type"):
+                    st.caption(f"Type: {doc['file_type'].upper()}")
                 if doc.get("total_pages"):
                     st.caption(f"Pages: {doc['total_pages']}")
 
@@ -243,23 +298,127 @@ def _render_document_list():
                     SessionService.remove_pdf(doc.get("id", idx))
                     SessionService.remove_document(idx)
                     st.rerun()
-        
-        st.divider()
-        _render_action_buttons()
     else:
         st.info("No documents yet\n\nUpload documents to start asking questions!")
 
 
-def _render_action_buttons():
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("Clear All", use_container_width=True):
-            SessionService.clear_documents()
-            st.rerun()
-    
-    with col2:
-        if st.button("New Chat", use_container_width=True):
-            SessionService.clear_chat_history()
+def _render_doc_filter_section():
+    """Multi-select filter: giới hạn tài liệu dùng để trả lời câu hỏi."""
+    st.subheader("Document Filter")
+    documents = SessionService.get_documents() or []
+    if not documents:
+        st.caption("Chưa có tài liệu để lọc.")
+        return
+
+    options = [d.get("name") for d in documents if d.get("name")]
+    file_types = sorted({d.get("file_type", "unknown") for d in documents})
+
+    st.multiselect(
+        "Chỉ tìm trong tài liệu",
+        options=options,
+        key="doc_filter",
+        help="Để trống = tìm trong tất cả tài liệu.",
+    )
+    st.multiselect(
+        "Loại file",
+        options=file_types,
+        key="file_type_filter",
+        help="Lọc theo loại file (pdf/docx/image). Để trống = tất cả.",
+    )
+
+
+def _render_chat_history_section():
+    """Hiển thị lịch sử câu hỏi đã hỏi trong sidebar (8.2.2)."""
+    st.subheader("Chat History")
+    messages = SessionService.get_messages_for_ui() or []
+    if not messages:
+        st.caption("Chưa có lịch sử hội thoại.")
+        return
+
+    pairs = []
+    i = 0
+    while i < len(messages):
+        m = messages[i]
+        if m.get("role") == "user":
+            replies = []
+            j = i + 1
+            while j < len(messages) and messages[j].get("role") == "assistant":
+                replies.append(messages[j])
+                j += 1
+            pairs.append((m, replies))
+            i = j
+        else:
+            i += 1
+
+    total = len(pairs)
+    st.caption(f"**{total} câu hỏi đã hỏi**")
+
+    recent = pairs[-20:][::-1]
+    for idx, (user_msg, replies) in enumerate(recent):
+        question = (user_msg.get("content") or "").strip()
+        short = question[:60] + ("..." if len(question) > 60 else "")
+        ts = user_msg.get("timestamp", "")
+        with st.expander(f"Q: {short}   ·   {ts}", expanded=False):
+            st.markdown(f"**Question:** {question}")
+            for r in replies:
+                mode = r.get("mode", "Assistant")
+                content = (r.get("content") or "").strip()
+                preview = content[:300] + ("..." if len(content) > 300 else "")
+                st.markdown(f"**{mode}:** {preview}")
+
+
+def _confirm_button(action_key: str, label: str, warning_msg: str, on_confirm):
+    """Render 1 nút có confirmation: bấm lần 1 -> hiện Yes/Cancel; bấm Yes -> gọi on_confirm."""
+    confirm_flag = f"confirm_{action_key}"
+    if st.session_state.get(confirm_flag):
+        st.warning(warning_msg)
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button(f"Yes, {label}", key=f"{action_key}_yes", use_container_width=True, type="primary"):
+                on_confirm()
+                st.session_state[confirm_flag] = False
+                st.rerun()
+        with c2:
+            if st.button("Cancel", key=f"{action_key}_cancel", use_container_width=True):
+                st.session_state[confirm_flag] = False
+                st.rerun()
+    else:
+        if st.button(label, key=f"{action_key}_trigger", use_container_width=True):
+            st.session_state[confirm_flag] = True
             st.rerun()
 
+
+def _render_danger_zone():
+    """8.2.3 - Clear History / Clear Vector Store / Clear Everything có confirmation."""
+    st.subheader("Danger Zone")
+
+    _confirm_button(
+        "clear_history",
+        "Clear Chat History",
+        "Toàn bộ lịch sử hội thoại sẽ bị xóa. Tiếp tục?",
+        SessionService.clear_chat_history,
+    )
+
+    def _clear_vector_store():
+        VectorStoreService.clear()
+        SessionService.clear_documents()
+        SessionService.clear_all_pdfs()
+        SessionService.clear_all_chunks()
+
+    _confirm_button(
+        "clear_vs",
+        "Clear Vector Store",
+        "Toàn bộ tài liệu đã upload + vector index sẽ bị xóa. Tiếp tục?",
+        _clear_vector_store,
+    )
+
+    def _clear_everything():
+        SessionService.clear_chat_history()
+        _clear_vector_store()
+
+    _confirm_button(
+        "clear_all",
+        "Clear Everything",
+        "Xóa TẤT CẢ: lịch sử chat + tài liệu + vector store. Tiếp tục?",
+        _clear_everything,
+    )

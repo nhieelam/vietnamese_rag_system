@@ -51,6 +51,20 @@ class SessionService:
         if "per_source_k" not in st.session_state:
             st.session_state.per_source_k = 4
 
+        if "retriever_mode" not in st.session_state:
+            st.session_state.retriever_mode = "vector"
+        if "bm25_weight" not in st.session_state:
+            st.session_state.bm25_weight = 0.4
+        if "use_reranker" not in st.session_state:
+            st.session_state.use_reranker = False
+        if "doc_filter" not in st.session_state:
+            st.session_state.doc_filter = []
+        if "file_type_filter" not in st.session_state:
+            st.session_state.file_type_filter = []
+        if "all_chunks" not in st.session_state:
+            # List[Document] — keep a mirror of all chunks for BM25 retriever
+            st.session_state.all_chunks = []
+
     @classmethod
     def set_vector_store(cls, vector_store):
         if cls._has_context():
@@ -150,6 +164,63 @@ class SessionService:
     def remove_pdf(cls, document_id: int):
         if cls._has_context():
             st.session_state.get("pdf_files", {}).pop(int(document_id), None)
+
+    @classmethod
+    def clear_all_pdfs(cls):
+        if cls._has_context():
+            st.session_state.pdf_files = {}
+
+    @classmethod
+    def add_chunks(cls, docs):
+        """Thêm list[Document] vào session để BM25 có thể dùng."""
+        if not cls._has_context() or not docs:
+            return
+        existing = st.session_state.setdefault("all_chunks", [])
+        existing.extend(docs)
+
+    @classmethod
+    def get_all_chunks(cls):
+        if not cls._has_context():
+            return []
+        return st.session_state.get("all_chunks", []) or []
+
+    @classmethod
+    def clear_all_chunks(cls):
+        if cls._has_context():
+            st.session_state.all_chunks = []
+
+    @classmethod
+    def get_doc_filter(cls) -> list:
+        if not cls._has_context():
+            return []
+        return list(st.session_state.get("doc_filter", []) or [])
+
+    @classmethod
+    def get_file_type_filter(cls) -> list:
+        if not cls._has_context():
+            return []
+        return list(st.session_state.get("file_type_filter", []) or [])
+
+    @classmethod
+    def get_retriever_mode(cls) -> str:
+        if not cls._has_context():
+            return "vector"
+        return st.session_state.get("retriever_mode", "vector") or "vector"
+
+    @classmethod
+    def get_bm25_weight(cls) -> float:
+        if not cls._has_context():
+            return 0.4
+        try:
+            return float(st.session_state.get("bm25_weight", 0.4))
+        except Exception:
+            return 0.4
+
+    @classmethod
+    def get_use_reranker(cls) -> bool:
+        if not cls._has_context():
+            return False
+        return bool(st.session_state.get("use_reranker", False))
 
     @classmethod
     def clear_chat_history(cls):

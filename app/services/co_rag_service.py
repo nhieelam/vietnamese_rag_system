@@ -303,11 +303,38 @@ Sub-queries (one per line):
             if target_sources:
                 logger.info(f"[Co-RAG] Detected target sources: {target_sources}")
 
+            doc_filter, type_filter = RAGService._metadata_filters()
+            need_overfetch = bool(target_sources or doc_filter or type_filter)
+
+            retriever_mode = SessionService.get_retriever_mode()
+            use_reranker = SessionService.get_use_reranker()
+
             scored_map: Dict[tuple, tuple] = {}
             for sq in sub_queries:
+                if retriever_mode == "hybrid" and not target_sources:
+                    from app.services.hybrid_retriever_service import HybridRetrieverService
+                    base_k = AppConfig.CO_RAG_K_PER_SUBQUERY
+                    raw_pairs = HybridRetrieverService.retrieve(sq, k=max(base_k, 6))
+                    for doc, rel in raw_pairs:
+                        meta = doc.metadata or {}
+                        if target_sources and meta.get("source") not in target_sources:
+                            continue
+                        if not RAGService._passes_filters(doc, doc_filter, type_filter):
+                            continue
+                        key = (
+                            meta.get("source"),
+                            meta.get("document_id"),
+                            meta.get("chunk_id"),
+                            meta.get("char_start"),
+                        )
+                        prev = scored_map.get(key)
+                        if prev is None or rel > prev[1]:
+                            scored_map[key] = (doc, rel)
+                    continue
+
                 fetch_k = (
                     max(AppConfig.CO_RAG_K_PER_SUBQUERY * 5, 20)
-                    if target_sources else AppConfig.CO_RAG_K_PER_SUBQUERY
+                    if need_overfetch else AppConfig.CO_RAG_K_PER_SUBQUERY
                 )
                 try:
                     pairs = vector_store.similarity_search_with_score(sq, k=fetch_k)
@@ -319,6 +346,8 @@ Sub-queries (one per line):
                 for doc, dist in pairs:
                     meta = doc.metadata or {}
                     if target_sources and meta.get("source") not in target_sources:
+                        continue
+                    if not RAGService._passes_filters(doc, doc_filter, type_filter):
                         continue
                     try:
                         rel = 1.0 / (1.0 + float(dist))
@@ -338,6 +367,14 @@ Sub-queries (one per line):
             if not target_sources:
                 rp = SessionService.get_retrieval_params()
                 scored = RAGService._diversify_by_source(scored, per_source=rp["per_source_k"])
+
+            if use_reranker and scored:
+                from app.services.reranker_service import RerankerService
+                rp = SessionService.get_retrieval_params()
+                scored = RerankerService.rerank(
+                    standalone_question, scored, top_k=rp["k"]
+                )
+
             citations = RAGService._docs_to_citations(scored)
 
             # Tổng hợp với context đã đánh số -> prompt đòi inline [n]
