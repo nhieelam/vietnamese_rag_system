@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime
 from app.services import CoRAGService
 from app.services import RAGService
+from app.services import SelfRAGService
 from app.services import SessionService
 from app.config import AppConfig
 
@@ -53,13 +54,14 @@ def _process_user_message(user_input: str):
         spinner_msg = "🤔 Thinking with RAG and Co-RAG..."
     elif mode == AppConfig.ANSWER_MODE_RAG:
         spinner_msg = "🤔 Thinking with RAG..."
+    elif mode == AppConfig.ANSWER_MODE_SELF_RAG:
+        spinner_msg = "🧠 Thinking with Self-RAG (rewrite → grade → evaluate)..."
     else:
         spinner_msg = "🤔 Thinking with Co-RAG..."
 
     with st.spinner(spinner_msg):
         try:
             if mode == AppConfig.ANSWER_MODE_RAG:
-                # Only RAG with citations
                 rag_result = RAGService.get_answer_with_citations(user_input)
                 
                 message = {
@@ -71,7 +73,6 @@ def _process_user_message(user_input: str):
                 SessionService.add_message_with_citations("assistant", message, timestamp)
             
             elif mode == AppConfig.ANSWER_MODE_CO_RAG:
-                # Only Co-RAG with citations
                 co_rag_result = CoRAGService.get_answer_with_citations(user_input)
                 
                 message = {
@@ -81,7 +82,23 @@ def _process_user_message(user_input: str):
                     "mode": "Co-RAG"
                 }
                 SessionService.add_message_with_citations("assistant", message, timestamp)
-            
+
+            elif mode == AppConfig.ANSWER_MODE_SELF_RAG:
+                self_result = SelfRAGService.get_answer_with_citations(user_input)
+
+                message = {
+                    "role": "assistant",
+                    "content": self_result.answer,
+                    "citations": self_result.citations,
+                    "mode": "Self-RAG",
+                    "confidence": self_result.confidence,
+                    "rewritten_query": self_result.rewritten_query,
+                    "grounded_score": self_result.grounded_score,
+                    "completeness_score": self_result.completeness_score,
+                    "hops": self_result.hops,
+                }
+                SessionService.add_message_with_citations("assistant", message, timestamp)
+
             else:  # ANSWER_MODE_BOTH
                 # Both RAG and Co-RAG with citations
                 rag_result = RAGService.get_answer_with_citations(user_input)

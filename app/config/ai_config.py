@@ -4,9 +4,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class AIConfig:
-    MODAL_NAME = "paraphrase-multilingual-mpnet-base-v2"
-
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
+    MODAL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower().strip()
     
     OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")
 
@@ -20,20 +19,17 @@ class AIConfig:
         
         if provider == "ollama":
             from langchain_community.chat_models import ChatOllama
-
             return ChatOllama(
                 model=cls.OLLAMA_LLM_MODEL,
                 temperature=0.3,
             )
-    
-        elif provider == "groq":
+        
+        if provider == "groq":
             from langchain_groq import ChatGroq
-
             return ChatGroq(
                 model=cls.GROQ_LLM_MODEL,
                 api_key=cls.GROQ_API_KEY,
                 temperature=0.3,
             )
         
-        else:
-            raise ValueError(f"Unsupported LLM provider: '{provider}'. Use 'ollama' or 'groq'")
+        raise ValueError(f"Unsupported LLM provider: '{provider}'. Use 'ollama' or 'groq'")

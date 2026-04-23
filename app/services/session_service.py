@@ -38,6 +38,33 @@ class SessionService:
         if "max_tokens" not in st.session_state:
             st.session_state.max_tokens = 800
 
+        if "pdf_files" not in st.session_state:
+            # Map document_id -> {"name": str, "bytes": bytes}
+            st.session_state.pdf_files = {}
+
+        if "chunk_size" not in st.session_state:
+            st.session_state.chunk_size = 500
+        if "chunk_overlap" not in st.session_state:
+            st.session_state.chunk_overlap = 50
+        if "retrieval_k" not in st.session_state:
+            st.session_state.retrieval_k = 5
+        if "per_source_k" not in st.session_state:
+            st.session_state.per_source_k = 4
+
+        if "retriever_mode" not in st.session_state:
+            st.session_state.retriever_mode = "vector"
+        if "bm25_weight" not in st.session_state:
+            st.session_state.bm25_weight = 0.4
+        if "use_reranker" not in st.session_state:
+            st.session_state.use_reranker = False
+        if "doc_filter" not in st.session_state:
+            st.session_state.doc_filter = []
+        if "file_type_filter" not in st.session_state:
+            st.session_state.file_type_filter = []
+        if "all_chunks" not in st.session_state:
+            # List[Document] — keep a mirror of all chunks for BM25 retriever
+            st.session_state.all_chunks = []
+
     @classmethod
     def set_vector_store(cls, vector_store):
         if cls._has_context():
@@ -100,15 +127,100 @@ class SessionService:
 
     @classmethod
     def add_message_with_citations(cls, role: str, message: dict, timestamp: str):
-        """Add message with citations support"""
+        """Lưu message, convert Citation -> dict để serialize được."""
+        if not cls._has_context():
+            return
+
+        payload = dict(message)
+        payload["role"] = role
+        payload["timestamp"] = timestamp
+
+        raw_citations = payload.get("citations") or []
+        serialized = []
+        for c in raw_citations:
+            if hasattr(c, "to_dict"):
+                serialized.append(c.to_dict())
+            elif isinstance(c, dict):
+                serialized.append(c)
+        payload["citations"] = serialized
+
+        st.session_state.messages.append(payload)
+
+    @classmethod
+    def store_pdf(cls, document_id: int, name: str, data: bytes):
+        if not cls._has_context() or not data:
+            return
+        files = st.session_state.setdefault("pdf_files", {})
+        files[int(document_id)] = {"name": name, "bytes": data}
+
+    @classmethod
+    def get_pdf(cls, document_id: int):
+        if not cls._has_context():
+            return None
+        files = st.session_state.get("pdf_files", {})
+        return files.get(int(document_id))
+
+    @classmethod
+    def remove_pdf(cls, document_id: int):
         if cls._has_context():
-            message_obj = {
-                "role": role,
-                "timestamp": timestamp
-            }
-            # Merge message dict (contains content, citations, mode, etc.)
-            message_obj.update(message)
-            st.session_state.messages.append(message_obj)
+            st.session_state.get("pdf_files", {}).pop(int(document_id), None)
+
+    @classmethod
+    def clear_all_pdfs(cls):
+        if cls._has_context():
+            st.session_state.pdf_files = {}
+
+    @classmethod
+    def add_chunks(cls, docs):
+        """Thêm list[Document] vào session để BM25 có thể dùng."""
+        if not cls._has_context() or not docs:
+            return
+        existing = st.session_state.setdefault("all_chunks", [])
+        existing.extend(docs)
+
+    @classmethod
+    def get_all_chunks(cls):
+        if not cls._has_context():
+            return []
+        return st.session_state.get("all_chunks", []) or []
+
+    @classmethod
+    def clear_all_chunks(cls):
+        if cls._has_context():
+            st.session_state.all_chunks = []
+
+    @classmethod
+    def get_doc_filter(cls) -> list:
+        if not cls._has_context():
+            return []
+        return list(st.session_state.get("doc_filter", []) or [])
+
+    @classmethod
+    def get_file_type_filter(cls) -> list:
+        if not cls._has_context():
+            return []
+        return list(st.session_state.get("file_type_filter", []) or [])
+
+    @classmethod
+    def get_retriever_mode(cls) -> str:
+        if not cls._has_context():
+            return "vector"
+        return st.session_state.get("retriever_mode", "vector") or "vector"
+
+    @classmethod
+    def get_bm25_weight(cls) -> float:
+        if not cls._has_context():
+            return 0.4
+        try:
+            return float(st.session_state.get("bm25_weight", 0.4))
+        except Exception:
+            return 0.4
+
+    @classmethod
+    def get_use_reranker(cls) -> bool:
+        if not cls._has_context():
+            return False
+        return bool(st.session_state.get("use_reranker", False))
 
     @classmethod
     def clear_chat_history(cls):
@@ -124,6 +236,28 @@ class SessionService:
         if not cls._has_context():
             return []
         return st.session_state.get("messages", [])
+
+    @classmethod
+    def get_chunk_params(cls) -> dict:
+        from app.config import AppConfig
+        if not cls._has_context():
+            return {
+                "chunk_size": AppConfig.CHUNK_SIZE,
+                "chunk_overlap": AppConfig.CHUNK_OVERLAP,
+            }
+        return {
+            "chunk_size": int(st.session_state.get("chunk_size", AppConfig.CHUNK_SIZE)),
+            "chunk_overlap": int(st.session_state.get("chunk_overlap", AppConfig.CHUNK_OVERLAP)),
+        }
+
+    @classmethod
+    def get_retrieval_params(cls) -> dict:
+        if not cls._has_context():
+            return {"k": 8, "per_source_k": 4}
+        return {
+            "k": int(st.session_state.get("retrieval_k", 8)),
+            "per_source_k": int(st.session_state.get("per_source_k", 4)),
+        }
 
     @classmethod
     def get_chat_history(cls, session_id: str = "default"):

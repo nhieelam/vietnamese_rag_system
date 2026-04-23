@@ -276,86 +276,168 @@ Sub-queries (one per line):
 
     @classmethod
     def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
-        """Get answer with Co-RAG and source citations"""
+        """Co-RAG with rich citations (page, offset, full chunk, inline [n])."""
         if not query.strip():
-            return AnswerWithCitations(
-                answer="Query is empty",
-                citations=[],
-                mode="Co-RAG"
-            )
+            return AnswerWithCitations(answer="Query is empty", citations=[], mode="Co-RAG")
 
         vector_store = SessionService.get_vector_store()
         if not vector_store:
             return AnswerWithCitations(
-                answer="No documents uploaded yet",
-                citations=[],
-                mode="Co-RAG"
+                answer="No documents uploaded yet", citations=[], mode="Co-RAG"
             )
 
         try:
-            retriever = vector_store.as_retriever(
-                search_kwargs={"k": AppConfig.CO_RAG_K_PER_SUBQUERY}
-            )
-
-            # 1. Tạo câu hỏi độc lập dựa trên lịch sử
             contextualize_chain = cls._create_contextualize_chain()
             chat_history_obj = SessionService.get_chat_history("default_session")
-            chat_history_messages = chat_history_obj.messages if hasattr(chat_history_obj, 'messages') else []
-            
+            chat_history_messages = getattr(chat_history_obj, "messages", []) or []
+
             standalone_question = contextualize_chain.invoke({
                 "question": query,
-                "chat_history": chat_history_messages
+                "chat_history": chat_history_messages,
             })
 
-            # 2. Tạo sub-queries
             sub_queries = cls._generate_subqueries(standalone_question)
 
-            # 3. Thực hiện retrieval cho mỗi sub-query
-            merged_docs, per_query_docs = cls._retrieve_for_queries(retriever, sub_queries)
+            # Nếu user nhắc tên file cụ thể → giới hạn retrieval theo source
+            target_sources = RAGService._detect_target_sources(standalone_question)
+            if target_sources:
+                logger.info(f"[Co-RAG] Detected target sources: {target_sources}")
 
-            # 4. Tạo citations từ tất cả retrieved documents
-            citations_dict = {}  # Sử dụng dict để loại bỏ trùng lặp
-            for doc in merged_docs:
-                metadata = doc.metadata or {}
-                source_name = metadata.get('source', 'Unknown Document')
-                
-                # Tạo key duy nhất dựa trên source và chunk_id
-                citation_key = (source_name, metadata.get('chunk_id', None))
-                
-                if citation_key not in citations_dict:
-                    citation = Citation(
-                        source_name=source_name,
-                        page_number=metadata.get('page', None),
-                        chunk_id=metadata.get('chunk_id', None),
-                        relevance_score=metadata.get('score', 0.0),
-                        excerpt=doc.page_content[:200]
+            doc_filter, type_filter = RAGService._metadata_filters()
+            need_overfetch = bool(target_sources or doc_filter or type_filter)
+
+            retriever_mode = SessionService.get_retriever_mode()
+            use_reranker = SessionService.get_use_reranker()
+
+            scored_map: Dict[tuple, tuple] = {}
+            for sq in sub_queries:
+                if retriever_mode == "hybrid" and not target_sources:
+                    from app.services.hybrid_retriever_service import HybridRetrieverService
+                    base_k = AppConfig.CO_RAG_K_PER_SUBQUERY
+                    raw_pairs = HybridRetrieverService.retrieve(sq, k=max(base_k, 6))
+                    for doc, rel in raw_pairs:
+                        meta = doc.metadata or {}
+                        if target_sources and meta.get("source") not in target_sources:
+                            continue
+                        if not RAGService._passes_filters(doc, doc_filter, type_filter):
+                            continue
+                        key = (
+                            meta.get("source"),
+                            meta.get("document_id"),
+                            meta.get("chunk_id"),
+                            meta.get("char_start"),
+                        )
+                        prev = scored_map.get(key)
+                        if prev is None or rel > prev[1]:
+                            scored_map[key] = (doc, rel)
+                    continue
+
+                fetch_k = (
+                    max(AppConfig.CO_RAG_K_PER_SUBQUERY * 5, 20)
+                    if need_overfetch else AppConfig.CO_RAG_K_PER_SUBQUERY
+                )
+                try:
+                    pairs = vector_store.similarity_search_with_score(sq, k=fetch_k)
+                except Exception:
+                    logger.exception("similarity_search_with_score failed in Co-RAG")
+                    docs = vector_store.similarity_search(sq, k=fetch_k)
+                    pairs = [(d, 0.0) for d in docs]
+
+                for doc, dist in pairs:
+                    meta = doc.metadata or {}
+                    if target_sources and meta.get("source") not in target_sources:
+                        continue
+                    if not RAGService._passes_filters(doc, doc_filter, type_filter):
+                        continue
+                    try:
+                        rel = 1.0 / (1.0 + float(dist))
+                    except Exception:
+                        rel = 0.0
+                    key = (
+                        meta.get("source"),
+                        meta.get("document_id"),
+                        meta.get("chunk_id"),
+                        meta.get("char_start"),
                     )
-                    citations_dict[citation_key] = citation
+                    prev = scored_map.get(key)
+                    if prev is None or rel > prev[1]:
+                        scored_map[key] = (doc, rel)
 
-            citations = list(citations_dict.values())
+            scored = sorted(scored_map.values(), key=lambda x: x[1], reverse=True)
+            if not target_sources:
+                rp = SessionService.get_retrieval_params()
+                scored = RAGService._diversify_by_source(scored, per_source=rp["per_source_k"])
 
-            # 5. Tạo context và synthesize answer
-            context = RAGService._format_docs(merged_docs)
-            synthesis_chain = cls._create_synthesis_chain()
+            if use_reranker and scored:
+                from app.services.reranker_service import RerankerService
+                rp = SessionService.get_retrieval_params()
+                scored = RerankerService.rerank(
+                    standalone_question, scored, top_k=rp["k"]
+                )
 
+            citations = RAGService._docs_to_citations(scored)
+
+            # Tổng hợp với context đã đánh số -> prompt đòi inline [n]
+            indexed_parts = []
+            for c in citations:
+                header = f"[{c.ref_index}] Source: {c.source_name}"
+                if c.page_number is not None:
+                    header += f" · page {c.page_number}"
+                indexed_parts.append(f"{header}\n{c.full_text}")
+            context = "\n\n".join(indexed_parts)
+
+            synthesis_chain = cls._create_synthesis_chain_with_citations()
             answer = synthesis_chain.invoke({
                 "context": context,
-                "question": standalone_question
+                "question": standalone_question,
             })
 
-            return AnswerWithCitations(
-                answer=answer.strip(),
-                citations=citations,
-                mode="Co-RAG"
+            cleaned_answer, kept_citations = RAGService._sanitize_answer_citations(
+                (answer or "").strip(), citations
             )
 
+            chat_history_obj.add_user_message(query)
+            chat_history_obj.add_ai_message(cleaned_answer)
+
+            return AnswerWithCitations(
+                answer=cleaned_answer,
+                citations=kept_citations,
+                mode="Co-RAG",
+            )
         except Exception as e:
             logger.exception("Co-RAG with citations failed")
             return AnswerWithCitations(
                 answer=f"Error generating response: {str(e)}",
                 citations=[],
-                mode="Co-RAG"
+                mode="Co-RAG",
             )
+
+    @classmethod
+    def _create_synthesis_chain_with_citations(cls) -> Runnable:
+        template = """
+        You are a helpful AI assistant. Use ONLY the context below.
+        Each context block is prefixed with a marker like [1], [2]. When you use
+        information from a block, append its marker inline, e.g. "... theo quy định [2]".
+
+        STRICT RULES for citation markers:
+        - Only use marker numbers that actually appear in the context below.
+        - Never invent a number. If unsure, omit the marker.
+        - Attach a marker ONLY to the exact block that contains the information.
+        - Do not reuse the same marker for information from a different block.
+
+        If the answer is not in the context, clearly say so.
+        Answer in the same language as the question.
+
+        Context (merged from multiple retrieval rounds):
+        {context}
+
+        Original Question:
+        {question}
+
+        Final Answer (với tham chiếu [n]):
+        """.strip()
+        prompt = PromptTemplate.from_template(template)
+        return prompt | cls._init_llm() | StrOutputParser()
 
     @staticmethod
     def _error(code: int, msg: str) -> Dict[str, Any]:

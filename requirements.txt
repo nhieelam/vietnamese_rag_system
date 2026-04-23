@@ -33,6 +33,11 @@ tiktoken
 faiss-cpu==1.8.0
 
 # ===============================
+# Keyword / Hybrid Retrieval
+# ===============================
+rank_bm25==0.2.2
+
+# ===============================
 # Document Processing
 # ===============================
 python-docx==1.1.2
@@ -50,3 +55,6 @@ pydantic
 loguru
 requests
 tqdm
+
+
+python-dotenv==1.0.1
