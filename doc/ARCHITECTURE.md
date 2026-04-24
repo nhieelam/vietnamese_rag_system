@@ -72,6 +72,9 @@ flowchart TB
 
 ## 4. Chunk và metadata
 
+- API cắt văn bản: [TEXT_SPLITTER.md](./TEXT_SPLITTER.md)
+- Khái niệm chunk, metadata, `all_chunks` vs FAISS: [CHUNK.md](./CHUNK.md)
+
 | Thành phần | Thư viện | Chi tiết |
 |------------|----------|----------|
 | Chia văn bản | **langchain-text-splitters** → `RecursiveCharacterTextSplitter` | `TextSplitterService`: kích thước / overlap từ `AppConfig` hoặc session |
@@ -80,6 +83,9 @@ flowchart TB
 ---
 
 ## 5. Embedding và vector store
+
+- Nhúng vector & `HuggingFaceEmbeddings`: [EMBEDDING.md](./EMBEDDING.md)
+- FAISS, `VectorStoreService`, nối index, xóa index: [VECTOR.md](./VECTOR.md)
 
 | Thành phần | Thư viện | Chi tiết |
 |------------|----------|----------|
@@ -91,6 +97,9 @@ flowchart TB
 
 ## 6. Truy vấn (retrieval)
 
+- BM25 + FAISS (`HybridRetrieverService`): [HYBRID_RETRIEVER.md](./HYBRID_RETRIEVER.md)
+- Cross-encoder rerank (BGE reranker, tùy chọn): [RERANK.md](./RERANK.md)
+
 | Chiến lược | Thư viện | Module |
 |------------|----------|--------|
 | Chỉ vector (FAISS similarity) | LangChain retriever trên FAISS | `RAGService` / cấu hình sidebar |
@@ -100,6 +109,8 @@ flowchart TB
 ---
 
 ## 7. Sinh câu trả lời (LLM và chuỗi)
+
+Pipeline **RAG Only** (retrieve, trích dẫn `[n]`, hai hàm `get_answer*`): [RAG.md](./RAG.md).
 
 | Thành phần | Thư viện | Chi tiết |
 |------------|----------|----------|
@@ -116,7 +127,9 @@ Cấu hình provider: biến môi trường `LLM_PROVIDER` = `ollama` hoặc `gr
 ## 8. Các chế độ trả lời (tóm tắt)
 
 - **RAG Only** / **Co-RAG** / **RAG & Co-RAG** / **Self-RAG** — định nghĩa thứ tự và nhãn trong `AppConfig.ANSWER_MODE_*`; logic tương ứng trong `rag_service`, `co_rag_service`, `self_rag_service`.
-- Mô hình trích dẫn: `app.models.citation` (`Citation`, `AnswerWithCitations`).
+- Pipeline **Co-RAG** (sub-query, gom kết quả, tổng hợp có trích dẫn): [CO_RAG.md](./CO_RAG.md).
+- Pipeline **Self-RAG** (rewrite, chấm relevance, self-eval, multi-hop tùy conf.): [SELF_RAG.md](./SELF_RAG.md).
+- Mô hình trích dẫn: `app.models.citation` (`Citation`, `AnswerWithCitations`). Chi tiết luồng dữ liệu và bảng trường: [CITATION.md](./CITATION.md).
 
 ---
 

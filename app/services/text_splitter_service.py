@@ -21,7 +21,8 @@ class TextSplitterService:
     def _build_splitter(cls, add_start_index: bool = False) -> RecursiveCharacterTextSplitter:
         chunk_size, chunk_overlap = cls._resolve_params()
         if chunk_overlap >= chunk_size:
-            chunk_overlap = max(0, chunk_size // 5)
+            d = AppConfig.CHUNK_OVERLAP_AUTO_DIVISOR
+            chunk_overlap = max(0, chunk_size // d)
         return RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
