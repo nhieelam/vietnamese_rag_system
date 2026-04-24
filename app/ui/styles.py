@@ -1,122 +1,131 @@
-
-import streamlit as st
-
-
-def apply_custom_styles():
-    st.markdown("""
-        <style>
-        /* User Message Bubble */
-        .user-message {
-            background-color: #007bff;
-            color: white;
-            padding: 12px 16px;
-            border-radius: 18px;
-            margin: 8px 0;
-            max-width: 70%;
-            margin-left: auto;
-            text-align: right;
-        }
-        
-        /* Assistant Message Bubble */
-        .assistant-message {
-            background-color: #f1f3f4;
-            color: #202124;
-            padding: 12px 16px;
-            border-radius: 18px;
-            margin: 8px 0;
-            max-width: 70%;
-            margin-right: auto;
-        }
-        
-        /* Message Container */
-        .message-container {
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 16px;
-        }
-
-        /* Comparison layout for RAG vs Co-RAG */
-        .compare-title {
-            margin: 8px 0 6px 0;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #555;
-        }
-
-        .compare-card {
-            border: 1px solid #e6e6e6;
-            border-radius: 12px;
-            padding: 8px;
-            margin-bottom: 12px;
-            background: #fff;
-        }
-
-        .compare-rag {
-            border-left: 4px solid #2a6fdb;
-        }
-
-        .compare-co-rag {
-            border-left: 4px solid #1f8f66;
-        }
-
-        .compare-label {
-            font-size: 0.85rem;
-            color: #666;
-            margin-bottom: 2px;
-        }
-
-        .compare-message {
-            max-width: 100%;
-            margin: 4px 0;
-            border-radius: 10px;
-        }
-
-        .compare-time {
-            font-size: 0.75rem;
-            color: #999;
-            margin-top: 4px;
-        }
-        
-        /* Input Field Styling */
-        .stTextInput > div > div > input {
-            border-radius: 20px;
-        }
-        
-        /* Sidebar Styling */
-        .sidebar-content {
-            padding: 10px;
-        }
-        
-        /* Custom Divider */
-        hr {
-            margin: 1rem 0;
-        }
-
-        /* Inline citation badge in answers */
-        .cite-badge {
-            display: inline-block;
-            background: #fff3bf;
-            color: #8a6d00;
-            border: 1px solid #f1c40f;
-            border-radius: 8px;
-            padding: 0 6px;
-            margin: 0 2px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            line-height: 1.4;
-        }
-
-        /* Full chunk block inside citation expander */
-        .cite-chunk {
-            background: #fff8c6;
-            border-left: 4px solid #f1c40f;
-            padding: 10px 12px;
-            border-radius: 6px;
-            white-space: pre-wrap;
-            font-size: 0.9rem;
-            color: #2f2f2f;
-            max-height: 320px;
-            overflow-y: auto;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+
+import streamlit as st
+
+from app.config import AppConfig
+
+
+def apply_custom_styles():
+    st.markdown(
+        """
+        <style>
+        /* User Message Bubble */
+        .user-message {{
+            background-color: {user_bg};
+            color: white;
+            padding: 12px 16px;
+            border-radius: 18px;
+            margin: 8px 0;
+            max-width: {msg_max_w};
+            margin-left: auto;
+            text-align: right;
+        }}
+
+        /* Assistant Message Bubble */
+        .assistant-message {{
+            background-color: {asst_bg};
+            color: #202124;
+            padding: 12px 16px;
+            border-radius: 18px;
+            margin: 8px 0;
+            max-width: {msg_max_w};
+            margin-right: auto;
+        }}
+
+        /* Message Container */
+        .message-container {{
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 16px;
+        }}
+
+        /* Comparison layout for RAG vs Co-RAG */
+        .compare-title {{
+            margin: 8px 0 6px 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #555;
+        }}
+
+        .compare-card {{
+            border: 1px solid #e6e6e6;
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 12px;
+            background: #fff;
+        }}
+
+        .compare-rag {{
+            border-left: 4px solid #2a6fdb;
+        }}
+
+        .compare-co-rag {{
+            border-left: 4px solid #1f8f66;
+        }}
+
+        .compare-label {{
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 2px;
+        }}
+
+        .compare-message {{
+            max-width: 100%;
+            margin: 4px 0;
+            border-radius: 10px;
+        }}
+
+        .compare-time {{
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 4px;
+        }}
+
+        /* Input Field Styling */
+        .stTextInput > div > div > input {{
+            border-radius: 20px;
+        }}
+
+        /* Sidebar Styling */
+        .sidebar-content {{
+            padding: 10px;
+        }}
+
+        /* Custom Divider */
+        hr {{
+            margin: 1rem 0;
+        }}
+
+        /* Inline citation badge in answers */
+        .cite-badge {{
+            display: inline-block;
+            background: #fff3bf;
+            color: #8a6d00;
+            border: 1px solid #f1c40f;
+            border-radius: 8px;
+            padding: 0 6px;
+            margin: 0 2px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.4;
+        }}
+
+        /* Full chunk block inside citation expander */
+        .cite-chunk {{
+            background: #fff8c6;
+            border-left: 4px solid #f1c40f;
+            padding: 10px 12px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            color: #2f2f2f;
+            max-height: 320px;
+            overflow-y: auto;
+        }}
+        </style>
+        """.format(
+            user_bg=AppConfig.USER_MESSAGE_BG_COLOR,
+            asst_bg=AppConfig.ASSISTANT_MESSAGE_BG_COLOR,
+            msg_max_w=AppConfig.CHAT_MESSAGE_MAX_WIDTH,
+        ),
+        unsafe_allow_html=True,
+    )

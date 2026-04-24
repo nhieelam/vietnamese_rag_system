@@ -7,15 +7,10 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-from app.config import AIConfig
+from app.config import AIConfig, AppConfig
 from app.services.session_service import SessionService
 from app.utils.logger import logger
 from app.models.citation import Citation, AnswerWithCitations
-
-
-EXCERPT_LEN = 280
-DEFAULT_K = 5
-PER_SOURCE_K = 4
 
 
 class RAGService:
@@ -108,13 +103,17 @@ class RAGService:
         cls,
         vector_store,
         query: str,
-        k: int = DEFAULT_K,
+        k: Optional[int] = None,
         filter_source: Optional[str] = None,
     ) -> List[Tuple[Document, float]]:
         """Trả (doc, relevance 0..1). Lọc theo session filters + `filter_source`."""
+        if k is None:
+            k = AppConfig.DEFAULT_RETRIEVAL_K
         doc_filter, type_filter = cls._metadata_filters()
         need_overfetch = bool(filter_source or doc_filter or type_filter)
-        fetch_k = max(k * 5, 20) if need_overfetch else k
+        m = AppConfig.RETRIEVAL_OVERFETCH_MULTIPLIER
+        mn = AppConfig.RETRIEVAL_OVERFETCH_MIN_DOCS
+        fetch_k = max(k * m, mn) if need_overfetch else k
         try:
             pairs = vector_store.similarity_search_with_score(query, k=fetch_k)
         except Exception:
@@ -156,9 +155,11 @@ class RAGService:
     @staticmethod
     def _diversify_by_source(
         scored: List[Tuple[Document, float]],
-        per_source: int = PER_SOURCE_K,
+        per_source: Optional[int] = None,
     ) -> List[Tuple[Document, float]]:
         """Giới hạn số chunk mỗi file để nhiều nguồn cùng xuất hiện."""
+        if per_source is None:
+            per_source = AppConfig.DEFAULT_PER_SOURCE_K
         counts: Dict[str, int] = {}
         out: List[Tuple[Document, float]] = []
         for doc, score in scored:
@@ -186,8 +187,9 @@ class RAGService:
             seen.add(key)
 
             excerpt = doc.page_content.strip().replace("\n", " ")
-            if len(excerpt) > EXCERPT_LEN:
-                excerpt = excerpt[:EXCERPT_LEN].rstrip() + "…"
+            cap = AppConfig.CITATION_EXCERPT_MAX_LEN
+            if len(excerpt) > cap:
+                excerpt = excerpt[:cap].rstrip() + "…"
 
             citations.append(Citation(
                 source_name=meta.get("source", "Unknown Document"),
@@ -280,7 +282,9 @@ class RAGService:
             return cls._error(400, "No documents uploaded yet")
 
         try:
-            retriever = vector_store.as_retriever(search_kwargs={"k": 10})
+            retriever = vector_store.as_retriever(
+                search_kwargs={"k": AppConfig.LEGACY_RAG_CHAIN_RETRIEVER_K}
+            )
             history_aware_retriever = cls._create_history_aware_retriever(retriever)
             question_answer_chain = cls._create_document_chain()
             rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
@@ -312,12 +316,18 @@ class RAGService:
     @classmethod
     def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
         if not query.strip():
-            return AnswerWithCitations(answer="Query is empty", citations=[], mode="RAG")
+            return AnswerWithCitations(
+                answer="Query is empty",
+                citations=[],
+                mode=AppConfig.MESSAGE_MODE_RAG,
+            )
 
         vector_store = SessionService.get_vector_store()
         if not vector_store:
             return AnswerWithCitations(
-                answer="No documents uploaded yet", citations=[], mode="RAG"
+                answer="No documents uploaded yet",
+                citations=[],
+                mode=AppConfig.MESSAGE_MODE_RAG,
             )
 
         try:
@@ -333,7 +343,9 @@ class RAGService:
             retriever_mode = SessionService.get_retriever_mode()
             use_reranker = SessionService.get_use_reranker()
             # If reranker is on, fetch more candidates
-            fetch_k = max(k * 3, 15) if use_reranker else k
+            r_m = AppConfig.RERANK_CANDIDATE_MULTIPLIER
+            r_n = AppConfig.RERANK_CANDIDATE_MIN
+            fetch_k = max(k * r_m, r_n) if use_reranker else k
 
             # Phát hiện câu hỏi nhắc đích danh tên file → lọc theo source
             target_sources = cls._detect_target_sources(rephrased_query)
@@ -384,14 +396,14 @@ class RAGService:
             return AnswerWithCitations(
                 answer=cleaned_answer,
                 citations=kept_citations,
-                mode="RAG",
+                mode=AppConfig.MESSAGE_MODE_RAG,
             )
         except Exception as e:
             logger.exception("RAG with citations failed")
             return AnswerWithCitations(
                 answer=f"Error generating response: {str(e)}",
                 citations=[],
-                mode="RAG",
+                mode=AppConfig.MESSAGE_MODE_RAG,
             )
 
     @staticmethod

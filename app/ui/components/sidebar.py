@@ -29,32 +29,43 @@ def _render_retrieval_settings():
     st.subheader("Chunk & Retrieval")
 
     if "chunk_size_applied" not in st.session_state:
-        st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
+        st.session_state.chunk_size_applied = int(
+            st.session_state.get("chunk_size", AppConfig.CHUNK_SIZE)
+        )
     if "chunk_overlap_applied" not in st.session_state:
-        st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
+        st.session_state.chunk_overlap_applied = int(
+            st.session_state.get("chunk_overlap", AppConfig.CHUNK_OVERLAP)
+        )
 
     with st.expander("Advanced settings", expanded=False):
         st.slider(
             "Chunk size (characters)",
-            min_value=100, max_value=2000, step=50,
+            min_value=AppConfig.CHUNK_SLIDER_MIN,
+            max_value=AppConfig.CHUNK_SLIDER_MAX,
+            step=AppConfig.CHUNK_SLIDER_STEP,
             key="chunk_size",
             help="Độ dài mỗi chunk khi chia nhỏ tài liệu.",
         )
         chunk_size = int(st.session_state.chunk_size)
 
-        max_overlap = max(0, chunk_size - 50)
-        if int(st.session_state.get("chunk_overlap", 50)) > max_overlap:
+        margin = AppConfig.CHUNK_MAX_OVERLAP_MARGIN
+        max_overlap = max(0, chunk_size - margin)
+        if int(st.session_state.get("chunk_overlap", AppConfig.CHUNK_OVERLAP)) > max_overlap:
             st.session_state.chunk_overlap = max_overlap
         st.slider(
             "Chunk overlap",
-            min_value=0, max_value=max_overlap, step=10,
+            min_value=0,
+            max_value=max_overlap,
+            step=AppConfig.CHUNK_OVERLAP_SLIDER_STEP,
             key="chunk_overlap",
             help="Độ chồng lấn giữa 2 chunk liên tiếp. Nên < chunk_size / 3.",
         )
 
         st.slider(
             "Top-K chunks khi retrieval",
-            min_value=2, max_value=20, step=1,
+            min_value=AppConfig.RETRIEVAL_K_MIN,
+            max_value=AppConfig.RETRIEVAL_K_MAX,
+            step=1,
             key="retrieval_k",
             help="Số chunk được lấy cho mỗi câu hỏi.",
         )
@@ -73,14 +84,16 @@ def _render_retrieval_settings():
         st.caption("**Retriever strategy**")
         st.selectbox(
             "Retriever mode",
-            options=["vector", "hybrid"],
+            options=list(AppConfig.RETRIEVER_MODE_OPTIONS),
             key="retriever_mode",
             help="vector = FAISS semantic only. hybrid = BM25 + vector ensemble.",
         )
-        if st.session_state.get("retriever_mode") == "hybrid":
+        if st.session_state.get("retriever_mode") == AppConfig.RETRIEVER_MODE_HYBRID:
             st.slider(
                 "BM25 weight",
-                min_value=0.0, max_value=1.0, step=0.1,
+                min_value=AppConfig.BM25_WEIGHT_MIN,
+                max_value=AppConfig.BM25_WEIGHT_MAX,
+                step=AppConfig.BM25_WEIGHT_STEP,
                 key="bm25_weight",
                 help="Trọng số BM25 (vector weight = 1 - BM25 weight).",
             )
@@ -132,8 +145,12 @@ def _reindex_all_documents():
                         "total_pages": doc.get("total_pages"),
                     },
                 )
-            st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
-            st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
+            st.session_state.chunk_size_applied = int(
+                st.session_state.get("chunk_size", AppConfig.CHUNK_SIZE)
+            )
+            st.session_state.chunk_overlap_applied = int(
+                st.session_state.get("chunk_overlap", AppConfig.CHUNK_OVERLAP)
+            )
             st.success(f"Re-indexed {len(docs)} document(s) with new chunk params")
             st.rerun()
         except Exception as e:
@@ -264,8 +281,12 @@ def _process_and_add_documents(uploaded_files):
     progress.progress(1.0, text="Done")
 
     if added:
-        st.session_state.chunk_size_applied = int(st.session_state.get("chunk_size", 500))
-        st.session_state.chunk_overlap_applied = int(st.session_state.get("chunk_overlap", 50))
+        st.session_state.chunk_size_applied = int(
+            st.session_state.get("chunk_size", AppConfig.CHUNK_SIZE)
+        )
+        st.session_state.chunk_overlap_applied = int(
+            st.session_state.get("chunk_overlap", AppConfig.CHUNK_OVERLAP)
+        )
         st.success(f"Added {len(added)} file(s): " + ", ".join(added))
     if skipped:
         st.warning("Already uploaded: " + ", ".join(skipped))
@@ -353,17 +374,20 @@ def _render_chat_history_section():
     total = len(pairs)
     st.caption(f"**{total} câu hỏi đã hỏi**")
 
-    recent = pairs[-20:][::-1]
+    cap = AppConfig.CHAT_HISTORY_MAX_QUESTIONS_SHOWN
+    q_prev = AppConfig.CHAT_HISTORY_QUESTION_PREVIEW_LEN
+    a_prev = AppConfig.CHAT_HISTORY_ANSWER_PREVIEW_LEN
+    recent = pairs[-cap:][::-1]
     for idx, (user_msg, replies) in enumerate(recent):
         question = (user_msg.get("content") or "").strip()
-        short = question[:60] + ("..." if len(question) > 60 else "")
+        short = question[:q_prev] + ("..." if len(question) > q_prev else "")
         ts = user_msg.get("timestamp", "")
         with st.expander(f"Q: {short}   ·   {ts}", expanded=False):
             st.markdown(f"**Question:** {question}")
             for r in replies:
                 mode = r.get("mode", "Assistant")
                 content = (r.get("content") or "").strip()
-                preview = content[:300] + ("..." if len(content) > 300 else "")
+                preview = content[:a_prev] + ("..." if len(content) > a_prev else "")
                 st.markdown(f"**{mode}:** {preview}")
 
 

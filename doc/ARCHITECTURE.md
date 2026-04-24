@@ -83,7 +83,7 @@ flowchart TB
 
 | Thành phần | Thư viện | Chi tiết |
 |------------|----------|----------|
-| Embedding | **langchain-huggingface** `HuggingFaceEmbeddings` | Model mặc định: `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` (`AIConfig.MODAL_NAME`) |
+| Embedding | **langchain-huggingface** `HuggingFaceEmbeddings` | Model mặc định: `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` (`AppConfig.EMBEDDING_MODEL_NAME`) |
 | Nền tính toán | **sentence-transformers**, **transformers**, **torch** | CPU wheel trong `requirements.txt` |
 | Vector DB | **langchain_community.vectorstores.FAISS** + **faiss-cpu** | `VectorStoreService.build_from_chunks` tạo `Document` + metadata (`source`, `chunk_id`, `page`, …) |
 

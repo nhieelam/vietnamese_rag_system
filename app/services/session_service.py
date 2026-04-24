@@ -3,6 +3,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+from app.config import AppConfig
+
 # Store chat history objects in a simple in-memory dictionary.
 # This prevents LangChain from modifying Streamlit's session_state directly.
 store = {}
@@ -33,28 +35,28 @@ class SessionService:
             st.session_state.processing = False
 
         if "temperature" not in st.session_state:
-            st.session_state.temperature = 0.3
+            st.session_state.temperature = AppConfig.DEFAULT_TEMPERATURE
 
         if "max_tokens" not in st.session_state:
-            st.session_state.max_tokens = 800
+            st.session_state.max_tokens = AppConfig.DEFAULT_MAX_TOKENS
 
         if "pdf_files" not in st.session_state:
             # Map document_id -> {"name": str, "bytes": bytes}
             st.session_state.pdf_files = {}
 
         if "chunk_size" not in st.session_state:
-            st.session_state.chunk_size = 500
+            st.session_state.chunk_size = AppConfig.CHUNK_SIZE
         if "chunk_overlap" not in st.session_state:
-            st.session_state.chunk_overlap = 50
+            st.session_state.chunk_overlap = AppConfig.CHUNK_OVERLAP
         if "retrieval_k" not in st.session_state:
-            st.session_state.retrieval_k = 5
+            st.session_state.retrieval_k = AppConfig.DEFAULT_RETRIEVAL_K
         if "per_source_k" not in st.session_state:
-            st.session_state.per_source_k = 4
+            st.session_state.per_source_k = AppConfig.DEFAULT_PER_SOURCE_K
 
         if "retriever_mode" not in st.session_state:
-            st.session_state.retriever_mode = "vector"
+            st.session_state.retriever_mode = AppConfig.RETRIEVER_MODE_VECTOR
         if "bm25_weight" not in st.session_state:
-            st.session_state.bm25_weight = 0.4
+            st.session_state.bm25_weight = AppConfig.DEFAULT_BM25_WEIGHT
         if "use_reranker" not in st.session_state:
             st.session_state.use_reranker = False
         if "doc_filter" not in st.session_state:
@@ -204,17 +206,22 @@ class SessionService:
     @classmethod
     def get_retriever_mode(cls) -> str:
         if not cls._has_context():
-            return "vector"
-        return st.session_state.get("retriever_mode", "vector") or "vector"
+            return AppConfig.RETRIEVER_MODE_VECTOR
+        return (
+            st.session_state.get("retriever_mode", AppConfig.RETRIEVER_MODE_VECTOR)
+            or AppConfig.RETRIEVER_MODE_VECTOR
+        )
 
     @classmethod
     def get_bm25_weight(cls) -> float:
         if not cls._has_context():
-            return 0.4
+            return AppConfig.DEFAULT_BM25_WEIGHT
         try:
-            return float(st.session_state.get("bm25_weight", 0.4))
+            return float(
+                st.session_state.get("bm25_weight", AppConfig.DEFAULT_BM25_WEIGHT)
+            )
         except Exception:
-            return 0.4
+            return AppConfig.DEFAULT_BM25_WEIGHT
 
     @classmethod
     def get_use_reranker(cls) -> bool:
@@ -239,7 +246,6 @@ class SessionService:
 
     @classmethod
     def get_chunk_params(cls) -> dict:
-        from app.config import AppConfig
         if not cls._has_context():
             return {
                 "chunk_size": AppConfig.CHUNK_SIZE,
@@ -253,10 +259,19 @@ class SessionService:
     @classmethod
     def get_retrieval_params(cls) -> dict:
         if not cls._has_context():
-            return {"k": 8, "per_source_k": 4}
+            return {
+                "k": AppConfig.DEFAULT_RETRIEVAL_K,
+                "per_source_k": AppConfig.DEFAULT_PER_SOURCE_K,
+            }
         return {
-            "k": int(st.session_state.get("retrieval_k", 8)),
-            "per_source_k": int(st.session_state.get("per_source_k", 4)),
+            "k": int(
+                st.session_state.get("retrieval_k", AppConfig.DEFAULT_RETRIEVAL_K)
+            ),
+            "per_source_k": int(
+                st.session_state.get(
+                    "per_source_k", AppConfig.DEFAULT_PER_SOURCE_K
+                )
+            ),
         }
 
     @classmethod

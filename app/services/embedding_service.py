@@ -1,5 +1,6 @@
 from langchain_huggingface import HuggingFaceEmbeddings
-from app.config.ai_config import AIConfig
+
+from app.config import AppConfig
 
 
 class EmbeddingService:
@@ -9,6 +10,6 @@ class EmbeddingService:
     def get_huggingface_embedding(cls):
         if cls._embedding is None:
             cls._embedding = HuggingFaceEmbeddings(
-                model_name= AIConfig.MODAL_NAME
+                model_name=AppConfig.EMBEDDING_MODEL_NAME,
             )
         return cls._embedding

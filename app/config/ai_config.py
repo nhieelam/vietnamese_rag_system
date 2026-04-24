@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class AIConfig:
-    MODAL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower().strip()
     
     OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")
