@@ -1,2 +1,0 @@
-pdf_path,file_size_mb,num_chunks,chunk_size,chunk_overlap,load_time,embedding_time,retrieval_time,retrieval_time_min,retrieval_time_max,retrieval_k,use_co_rag,error,label
-dao.pdf,0.13835430145263672,6,500,50,0.26207828521728516,13.806717157363892,0.05730350812276205,0.048984527587890625,0.07378768920898438,5,False,,Nhỏ (2 trang)
