@@ -11,7 +11,8 @@ from app.config import AIConfig, AppConfig
 from app.services.session_service import SessionService
 from app.utils.logger import logger
 from app.models.citation import Citation, AnswerWithCitations
-
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 class RAGService:
 
@@ -251,7 +252,21 @@ class RAGService:
                 "document_id": c.document_id,
             }))
         return docs
+    @classmethod
+    def _query_rewrite_chain(cls):
+        template = (
+            "You are a query rewriting assistant for a document retrieval system.\n"
+            "Rewrite the user question to make it clearer, more specific, and easier "
+            "to retrieve relevant passages. Preserve the original language.\n"
+            "If the question is already clear, return it unchanged.\n"
+            "Return ONLY the rewritten question, no prefix, no explanation.\n\n"
+            "Original question: {question}\n\n"
+            "Rewritten question:"
+        )
+        
 
+        return PromptTemplate.from_template(template) | cls._init_llm() | StrOutputParser()
+    
     @classmethod
     def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
         if not query.strip():
@@ -273,7 +288,7 @@ class RAGService:
             chat_history_obj = SessionService.get_chat_history("default_session")
             chat_history_messages = getattr(chat_history_obj, "messages", []) or []
 
-            rephrased_query = query
+            rephrased_query  = cls._query_rewrite_chain().invoke({"question": query}).strip()
 
             rp = SessionService.get_retrieval_params()
             k = rp["k"]
@@ -287,7 +302,7 @@ class RAGService:
             fetch_k = max(k * r_m, r_n) if use_reranker else k
 
             # Phát hiện câu hỏi nhắc đích danh tên file → lọc theo source
-            target_sources = cls._detect_target_sources(rephrased_query)
+            target_sources = cls._detect_target_sources(query)
             if target_sources:
                 logger.info(f"Detected target sources in query: {target_sources}")
                 scored: List[Tuple[Document, float]] = []
@@ -295,7 +310,7 @@ class RAGService:
                     scored.extend(
                         cls._score_docs(
                             vector_store,
-                            rephrased_query,
+                            query,
                             k=per_source,
                             filter_source=src,
                         )
@@ -319,7 +334,7 @@ class RAGService:
             indexed_docs = cls._build_indexed_context(citations)
             qa_chain = cls._create_document_chain()
             answer = qa_chain.invoke({
-                "input": query,
+                "input": rephrased_query,
                 "chat_history": chat_history_messages,
                 "context": indexed_docs,
             })
