@@ -54,11 +54,11 @@ class SessionService:
             st.session_state.per_source_k = AppConfig.DEFAULT_PER_SOURCE_K
 
         if "retriever_mode" not in st.session_state:
-            st.session_state.retriever_mode = AppConfig.RETRIEVER_MODE_VECTOR
+            st.session_state.retriever_mode = AppConfig.RETRIEVER_MODE_HYBRID
         if "bm25_weight" not in st.session_state:
             st.session_state.bm25_weight = AppConfig.DEFAULT_BM25_WEIGHT
         if "use_reranker" not in st.session_state:
-            st.session_state.use_reranker = False
+            st.session_state.use_reranker = True
         if "doc_filter" not in st.session_state:
             st.session_state.doc_filter = []
         if "file_type_filter" not in st.session_state:
