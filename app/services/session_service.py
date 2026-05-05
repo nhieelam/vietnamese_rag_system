@@ -206,10 +206,10 @@ class SessionService:
     @classmethod
     def get_retriever_mode(cls) -> str:
         if not cls._has_context():
-            return AppConfig.RETRIEVER_MODE_VECTOR
+            return AppConfig.RETRIEVER_MODE_HYBRID
         return (
-            st.session_state.get("retriever_mode", AppConfig.RETRIEVER_MODE_VECTOR)
-            or AppConfig.RETRIEVER_MODE_VECTOR
+            st.session_state.get("retriever_mode", AppConfig.RETRIEVER_MODE_HYBRID)
+            or AppConfig.RETRIEVER_MODE_HYBRID
         )
 
     @classmethod
@@ -227,7 +227,7 @@ class SessionService:
     def get_use_reranker(cls) -> bool:
         if not cls._has_context():
             return False
-        return bool(st.session_state.get("use_reranker", False))
+        return bool(st.session_state.get("use_reranker", True))
 
     @classmethod
     def clear_chat_history(cls):

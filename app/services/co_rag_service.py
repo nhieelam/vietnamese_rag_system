@@ -48,34 +48,6 @@ class CoRAGService:
         )
         return prompt | cls._init_llm() | StrOutputParser()
 
-    @classmethod
-    def _create_decomposition_chain(cls) -> LLMChain:
-        template = """
-        You are a helpful AI assistant.
-
-        Use only the information from the provided context to answer the user question.
-        You may make reasonable inferences from the context, but never invent new facts.
-        Always answer in the same language as the user question.
-
-        If the answer is not stated directly but can be inferred, clearly say that it is
-        an inference from the provided documents.
-        If the context does not contain relevant information, clearly say that the information
-        is not found in the provided documents.
-
-        Context (merged from multiple retrieval rounds):
-        {context}
-
-        Question:
-        {question}
-
-        Answer:
-        """.strip()
-        prompt = PromptTemplate.from_template(template)
-        return LLMChain(
-            llm=cls._init_llm(),
-            prompt=prompt,
-            output_parser=JsonOutputParser()
-        )
 
     @classmethod
     def _decompose_prompt(cls) -> PromptTemplate:
@@ -204,76 +176,6 @@ Sub-queries (one per line):
         }
 
     @classmethod
-    def get_answer(cls, query: str) -> Dict[str, Any]:
-        if not query.strip():
-            return cls._error(400, "Query is empty")
-
-        vector_store = SessionService.get_vector_store()
-        if not vector_store:
-            return cls._error(400, "No documents uploaded yet")
-
-        try:
-            retriever = vector_store.as_retriever(
-                search_kwargs={"k": AppConfig.CO_RAG_K_PER_SUBQUERY}
-            )
-
-            # 1. Chain để tạo câu hỏi độc lập dựa trên lịch sử
-            contextualize_chain = cls._create_contextualize_chain()
-
-            # 2. Chain để tổng hợp câu trả lời cuối cùng
-            synthesis_chain = cls._create_synthesis_chain()
-
-            # 3. Xây dựng chain Co-RAG hoàn chỉnh
-            co_rag_chain = (
-                RunnablePassthrough.assign(
-                    sub_queries=RunnableLambda(
-                        lambda x: cls._generate_subqueries(x["standalone_question"])
-                    )
-                )
-                | RunnablePassthrough.assign(
-                    retrieval_results=lambda x: cls._run_sub_queries(
-                        retriever, x["sub_queries"]
-                    )
-                )
-                | (lambda x: {
-                    "context": x["retrieval_results"]["context"],
-                    "question": x["standalone_question"]
-                })
-                | synthesis_chain
-            )
-
-            # 4. Kết hợp chain hội thoại và chain Co-RAG
-            full_chain = RunnablePassthrough.assign(
-                standalone_question=contextualize_chain,
-                question=itemgetter("question")
-            ) | co_rag_chain
-
-
-            # 5. Bọc chain với trình quản lý lịch sử
-            conversational_chain = RunnableWithMessageHistory(
-                full_chain,
-                SessionService.get_chat_history,
-                input_messages_key="question",
-                history_messages_key="chat_history",
-            )
-
-            # 6. Thực thi chain
-            answer = conversational_chain.invoke(
-                {"question": query},
-                config={"configurable": {"session_id": "default_session"}}
-            )
-
-            return {
-                "status_code": 200,
-                "answer": answer.strip(),
-                "message": "OK",
-                "metadata": {},
-            }
-
-        except Exception as e:
-            logger.exception("Co-RAG failed")
-            return cls._error(500, str(e))
-
     @classmethod
     def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
         """Co-RAG with rich citations (page, offset, full chunk, inline [n])."""
@@ -438,12 +340,3 @@ Sub-queries (one per line):
         """.strip()
         prompt = PromptTemplate.from_template(template)
         return prompt | cls._init_llm() | StrOutputParser()
-
-    @staticmethod
-    def _error(code: int, msg: str) -> Dict[str, Any]:
-        return {
-            "status_code": code,
-            "answer": None,
-            "message": msg,
-            "metadata": {"mode": "co_rag"},
-        }

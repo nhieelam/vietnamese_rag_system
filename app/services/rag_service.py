@@ -20,26 +20,6 @@ class RAGService:
         return AIConfig.get_llm_instance()
 
     @classmethod
-    def _create_history_aware_retriever(cls, retriever):
-        contextualize_q_system_prompt = (
-            "Given a chat history and the latest user question "
-            "which might reference context in the chat history, "
-            "formulate a standalone question which can be understood "
-            "without the chat history. Do NOT answer the question, "
-            "just reformulate it if needed and otherwise return it as is."
-        )
-        contextualize_q_prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", contextualize_q_system_prompt),
-                MessagesPlaceholder("chat_history"),
-                ("human", "{input}"),
-            ]
-        )
-        return create_history_aware_retriever(
-            cls._init_llm(), retriever, contextualize_q_prompt
-        )
-
-    @classmethod
     def _create_document_chain(cls):
         qa_system_prompt = (
             "You are an assistant for question-answering tasks. "
@@ -273,47 +253,6 @@ class RAGService:
         return docs
 
     @classmethod
-    def get_answer(cls, query: str) -> Dict[str, Any]:
-        if not query.strip():
-            return cls._error(400, "Query is empty")
-
-        vector_store = SessionService.get_vector_store()
-        if not vector_store:
-            return cls._error(400, "No documents uploaded yet")
-
-        try:
-            retriever = vector_store.as_retriever(
-                search_kwargs={"k": AppConfig.LEGACY_RAG_CHAIN_RETRIEVER_K}
-            )
-            history_aware_retriever = cls._create_history_aware_retriever(retriever)
-            question_answer_chain = cls._create_document_chain()
-            rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-
-            conversational_rag_chain = RunnableWithMessageHistory(
-                rag_chain,
-                SessionService.get_chat_history,
-                input_messages_key="input",
-                history_messages_key="chat_history",
-                output_messages_key="answer",
-            )
-
-            result = conversational_rag_chain.invoke(
-                {"input": query},
-                config={"configurable": {"session_id": "default_session"}},
-            )
-            answer = result.get("answer", "")
-            retrieved_docs = result.get("context", [])
-            return {
-                "status_code": 200,
-                "answer": answer.strip(),
-                "message": "OK",
-                "metadata": {"retrieved_docs_count": len(retrieved_docs)},
-            }
-        except Exception as e:
-            logger.exception("RAG failed")
-            return cls._error(500, str(e))
-
-    @classmethod
     def get_answer_with_citations(cls, query: str) -> AnswerWithCitations:
         if not query.strip():
             return AnswerWithCitations(
@@ -405,12 +344,3 @@ class RAGService:
                 citations=[],
                 mode=AppConfig.MESSAGE_MODE_RAG,
             )
-
-    @staticmethod
-    def _error(code: int, msg: str):
-        return {
-            "status_code": code,
-            "answer": None,
-            "message": msg,
-            "metadata": {},
-        }
